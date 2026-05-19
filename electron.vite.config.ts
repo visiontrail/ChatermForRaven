@@ -90,6 +90,7 @@ export default defineConfig(({ mode }) => {
   // Sourcemap: enabled in dev, disabled in production by default (use ENABLE_SOURCEMAP=true to override)
   const isDev = resolvedMode.startsWith('development')
   const enableSourcemap = isDev || process.env.ENABLE_SOURCEMAP === 'true'
+  const chatermEmbedded = process.env.CHATERM_EMBEDDED === '1' || process.env.CHATERM_EMBEDDED === 'true'
 
   return {
     main: {
@@ -128,7 +129,8 @@ export default defineConfig(({ mode }) => {
         'process.env.CHATERM_TELEMETRY_ENABLED': JSON.stringify(env.RENDERER_TELEMETRY_ENABLED || ''),
         'process.env.CHATERM_DATA_SYNC_ENABLED': JSON.stringify(env.RENDERER_DATA_SYNC_ENABLED || ''),
         'process.env.CHATERM_DEPLOY_STATUS': JSON.stringify(env.RENDERER_DEPLOY_STATUS || '0'),
-        'process.env.CHATERM_PREINSTALLED_PLUGINS': JSON.stringify(env.RENDERER_PREINSTALLED_PLUGINS || '')
+        'process.env.CHATERM_PREINSTALLED_PLUGINS': JSON.stringify(env.RENDERER_PREINSTALLED_PLUGINS || ''),
+        'process.env.CHATERM_EMBEDDED': JSON.stringify(chatermEmbedded ? '1' : '')
       },
       build: {
         sourcemap: enableSourcemap,
@@ -229,7 +231,8 @@ export default defineConfig(({ mode }) => {
         },
         // Inject edition config to renderer process (single source of truth)
         __EDITION_CONFIG__: JSON.stringify(editionConfig),
-        'import.meta.env.RENDERER_APP_EDITION': JSON.stringify(edition)
+        'import.meta.env.RENDERER_APP_EDITION': JSON.stringify(edition),
+        'import.meta.env.RENDERER_CHATERM_EMBEDDED': JSON.stringify(chatermEmbedded ? '1' : '')
       },
       css: {
         preprocessorOptions: {

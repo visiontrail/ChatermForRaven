@@ -9,6 +9,10 @@ initUserDataPath()
 mark('chaterm/main/didInitUserDataPath')
 // ============ userData path initialization complete ============
 
+import { isChatermEmbedded, mountChaterm, unmountChaterm } from './embedded'
+export { isChatermEmbedded, mountChaterm, unmountChaterm }
+export type { MountChatermOptions, ChatermEmbedSignals, RavenEmbedBridge } from './embedded'
+
 // ============ Migrate database directory BEFORE Chromium initializes ============
 // IMPORTANT: This must be done before importing Electron modules
 import { migrateDbDirBeforeChromium } from './storage/db/early-migration'
@@ -276,8 +280,9 @@ export async function getUserConfigFromRenderer(): Promise<any> {
   })
 }
 
-app.whenReady().then(async () => {
-  mark('chaterm/main/appReady')
+if (!isChatermEmbedded()) {
+  app.whenReady().then(async () => {
+    mark('chaterm/main/appReady')
 
   // [Security] Verify ffmpeg.dll integrity asynchronously (Windows Only)
   let ffmpegVerification: Promise<void> | null = null
@@ -600,16 +605,19 @@ app.whenReady().then(async () => {
         logStartupTimeline()
       })
   }
-})
+  })
+}
 
 // Quit when all windows are closed, except on macOS. There, it's common
 // for applications and their menu bar to stay active until the user quits
 // explicitly with Cmd + Q.
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit()
-  }
-})
+if (!isChatermEmbedded()) {
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+      app.quit()
+    }
+  })
+}
 
 // Add the before-quit event listener here or towards the end of the file
 app.on('before-quit', async () => {
@@ -3120,14 +3128,16 @@ ipcMain.handle('plugin:setQizhiPluginEnabled', () => {
   return { success: false, message: 'Deprecated - plugins auto-register capabilities' }
 })
 
-// Register the agreement before the app is ready
-const protocolName = getProtocolName()
-if (!app.isDefaultProtocolClient(protocolName)) {
-  app.setAsDefaultProtocolClient(protocolName)
+// Register the agreement before the app is ready (standalone only; Raven owns auth in embedded mode)
+if (!isChatermEmbedded()) {
+  const protocolName = getProtocolName()
+  if (!app.isDefaultProtocolClient(protocolName)) {
+    app.setAsDefaultProtocolClient(protocolName)
+  }
 }
 
-// Handle protocol parameters on Linux
-if (process.platform === 'linux') {
+// Handle protocol parameters on Linux (standalone only)
+if (!isChatermEmbedded() && process.platform === 'linux') {
   // Implement single instance lock for Linux platform to ensure only one app instance runs
   const gotTheLock = app.requestSingleInstanceLock()
   const protocolPrefix = getProtocolPrefix()
@@ -3294,8 +3304,8 @@ const handleXshellWakeupArgv = (
   return true
 }
 
-// Activation of Processing Protocol in Windows
-if (process.platform === 'win32') {
+// Activation of Processing Protocol in Windows (standalone only)
+if (!isChatermEmbedded() && process.platform === 'win32') {
   const gotTheLock = app.requestSingleInstanceLock()
   const protocolPrefix = getProtocolPrefix()
 
@@ -3336,13 +3346,15 @@ if (process.platform === 'win32') {
   }
 }
 
-// Protocol Activation in macOS Processing
-app.on('open-url', (_event, url) => {
-  const protocolPrefix = getProtocolPrefix()
-  if (url.startsWith(protocolPrefix)) {
-    handleProtocolRedirect(url)
-  }
-})
+// Protocol Activation in macOS Processing (standalone only)
+if (!isChatermEmbedded()) {
+  app.on('open-url', (_event, url) => {
+    const protocolPrefix = getProtocolPrefix()
+    if (url.startsWith(protocolPrefix)) {
+      handleProtocolRedirect(url)
+    }
+  })
+}
 
 // Add IPC handler to get protocol prefix
 ipcMain.handle('get-protocol-prefix', async () => {
@@ -3357,6 +3369,10 @@ ipcMain.handle('xshell-wakeup:consume-pending', async () => {
 
 // Add IPC handler after creating Window function
 ipcMain.handle('open-external-login', async () => {
+  if (isChatermEmbedded()) {
+    return { success: false, skipped: true, reason: 'embedded' }
+  }
+
   try {
     // Generate a random state value for security verification
     const state = Math.random().toString(36).substring(2)

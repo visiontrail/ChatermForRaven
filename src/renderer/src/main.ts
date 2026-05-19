@@ -16,6 +16,7 @@ import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
 import { notification } from 'ant-design-vue'
 import { shortcutService } from './services/shortcutService'
 import { APP_EDITION } from './utils/edition'
+import { isChatermEmbedded } from './utils/embedded'
 import { createRendererLogger } from './utils/logger'
 import { useEditorConfigStore } from './store/editorConfig'
 
@@ -36,7 +37,17 @@ setupIndexDBMigrationListener()
 
 mark('chaterm/renderer/willCreateApp')
 const pinia = createPinia()
-pinia.use(piniaPluginPersistedstate)
+if (isChatermEmbedded()) {
+  pinia.use(piniaPluginPersistedstate, {
+    storage: {
+      getItem: () => null,
+      setItem: () => undefined,
+      removeItem: () => undefined
+    }
+  })
+} else {
+  pinia.use(piniaPluginPersistedstate)
+}
 const app = createApp(App)
 // Router
 app.use(router)

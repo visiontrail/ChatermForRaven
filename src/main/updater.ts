@@ -1,9 +1,15 @@
 import { ipcMain } from 'electron'
 // import { ipcMain, autoUpdater as nativeUpdater } from 'electron'
 import { autoUpdater } from 'electron-updater'
+import { isChatermEmbedded } from './config/embedded'
+
 const logger = createLogger('updater')
 
 export const registerUpdater = (targetWindow, setForceQuit: (value: boolean) => void) => {
+  if (isChatermEmbedded()) {
+    logger.info('Skipping auto-updater registration in embedded mode')
+    return
+  }
   // Status
   const status = {
     error: -1,

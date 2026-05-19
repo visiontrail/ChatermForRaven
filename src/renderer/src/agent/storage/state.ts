@@ -16,6 +16,7 @@ import { storageContext } from './storage-context'
 import { getUserInfo } from '@/utils/permission'
 import { userConfigStore } from '@/store/userConfigStore'
 import { markSyncMetaDirty } from '@/services/configSyncManager'
+import { isChatermEmbedded } from '@/utils/embedded'
 
 // global
 
@@ -407,6 +408,10 @@ export async function getAllExtensionState() {
 }
 
 export async function updateApiConfiguration(apiConfiguration: ApiConfiguration) {
+  if (isChatermEmbedded()) {
+    return
+  }
+
   const {
     apiProvider,
     apiModelId,

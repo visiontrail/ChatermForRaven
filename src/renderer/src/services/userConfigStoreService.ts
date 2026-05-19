@@ -9,6 +9,7 @@ import { THEME_PRESETS } from '../../../shared/themes/presets'
 import { resolveThemePreset } from '../../../shared/themes/resolve'
 import type { ThemeId } from '../../../shared/themes/types'
 import { applyThemeToDocument } from '@/themes/applyTheme'
+import { isChatermEmbedded, stripRavenOwnedUserConfigFields } from '@/utils/embedded'
 
 const logger = createRendererLogger('service.userConfig')
 
@@ -281,10 +282,11 @@ export class UserConfigStoreService {
   async saveConfig(config: Partial<UserConfig>): Promise<void> {
     try {
       const defaultConfig = await this.getConfig()
+      const persistableConfig = stripRavenOwnedUserConfigFields(config) as Partial<UserConfig>
 
       const sanitizedConfig: UserConfig = {
         ...defaultConfig,
-        ...config,
+        ...persistableConfig,
         sshProxyConfigs: config.sshProxyConfigs ? toRaw(config.sshProxyConfigs) : defaultConfig.sshProxyConfigs,
         id: 'userConfig',
         updatedAt: Date.now()
@@ -533,14 +535,16 @@ export const remoteApplyGuard = new RemoteApplyGuard()
 // ---------------------------------------------------------------------------
 
 export function dispatchSideEffects(changedFields: Partial<SyncableUserConfig>): void {
+  const embedded = isChatermEmbedded()
+
   // language -> localStorage + i18n locale
-  if ('language' in changedFields && changedFields.language) {
+  if (!embedded && 'language' in changedFields && changedFields.language) {
     localStorage.setItem('lang', changedFields.language)
     i18n.global.locale.value = changedFields.language
   }
 
   // theme -> document class + main process
-  if ('theme' in changedFields && changedFields.theme) {
+  if (!embedded && 'theme' in changedFields && changedFields.theme) {
     const themeId = changedFields.theme as import('../../../shared/themes/types').ThemeId
     const system = getSystemTheme() as 'dark' | 'light'
     const preset = resolveThemePreset(themeId, system)

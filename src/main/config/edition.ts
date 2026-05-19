@@ -8,6 +8,8 @@
 import { app } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
+import { isChatermEmbedded } from './embedded'
+
 const logger = createLogger('config')
 
 export type Edition = 'cn' | 'global'
@@ -51,6 +53,14 @@ let userDataPathInitialized = false
  * Default to 'cn' per spec 3.6
  */
 export function getEdition(): Edition {
+  if (isChatermEmbedded()) {
+    const locked = process.env.CHATERM_EMBEDDED_EDITION as Edition | undefined
+    if (locked === 'cn' || locked === 'global') {
+      return locked
+    }
+    return 'global'
+  }
+
   return (process.env.APP_EDITION as Edition) || 'cn'
 }
 

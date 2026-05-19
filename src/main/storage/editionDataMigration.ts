@@ -3,6 +3,7 @@ import path from 'path'
 import * as fs from 'fs'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
+import { isChatermEmbedded } from '../config/embedded'
 import { getEdition, getUserDataPath } from '../config/edition'
 const logger = createLogger('db')
 
@@ -26,6 +27,10 @@ const DB_DIR_NAME = 'chaterm_db'
 const LEGACY_DB_DIR_NAME = 'databases'
 
 export async function migrateCnUserDataOnFirstLaunch(): Promise<void> {
+  if (isChatermEmbedded()) {
+    return
+  }
+
   // Migration note: CN/Global split caused Global edition to miss legacy local data.
   // This one-time migration copies CN databases into the Global userData directory.
   if (getEdition() !== 'global') {
