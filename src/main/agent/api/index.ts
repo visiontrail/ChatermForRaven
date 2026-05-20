@@ -5,6 +5,8 @@
 // Licensed under the Apache License, Version 2.0
 
 import { Anthropic } from '@anthropic-ai/sdk'
+import { isChatermEmbedded } from '../../config/embedded'
+import { getRavenLLMClient } from '../../embedded'
 import { ApiConfiguration, ModelInfo, liteLlmModelInfoSaneDefaults } from '../shared/api'
 import { AwsBedrockHandler } from './providers/bedrock'
 import { LiteLlmHandler } from './providers/litellm'
@@ -12,6 +14,7 @@ import { DeepSeekHandler } from './providers/deepseek'
 import { OpenAiHandler } from './providers/openai'
 import { AnthropicHandler } from './providers/anthropic'
 import { OllamaHandler } from './providers/ollama'
+import { RavenBridgeHandler } from './raven-bridge/raven-bridge'
 import { ApiStream, ApiStreamUsageChunk } from './transform/stream'
 
 export interface ApiHandler {
@@ -69,13 +72,27 @@ class MockApiHandler implements ApiHandler {
   }
 }
 
+function buildRavenBridgeHandler(options: ApiConfiguration): ApiHandler {
+  const client = options.ravenLLMClient ?? getRavenLLMClient()
+  if (!client) {
+    throw new Error('Raven LLM bridge client is not available in embedded mode')
+  }
+  return new RavenBridgeHandler(client, options)
+}
+
 export function buildApiHandler(configuration: ApiConfiguration): ApiHandler {
   if (process.env.CHATERM_TEST_MOCK_LLM === '1') {
     return new MockApiHandler()
   }
 
+  if (isChatermEmbedded()) {
+    return buildRavenBridgeHandler(configuration)
+  }
+
   const { apiProvider, ...options } = configuration
   switch (apiProvider) {
+    case 'raven-bridge':
+      return buildRavenBridgeHandler(configuration)
     case 'anthropic':
       return new AnthropicHandler(options)
     case 'bedrock':

@@ -6,7 +6,7 @@
 
 import { ProxyConfig } from './Proxy'
 
-export type ApiProvider = 'anthropic' | 'bedrock' | 'litellm' | 'deepseek' | 'default' | 'openai' | 'ollama'
+export type ApiProvider = 'anthropic' | 'bedrock' | 'litellm' | 'deepseek' | 'default' | 'openai' | 'ollama' | 'raven-bridge'
 
 export interface ApiHandlerOptions {
   apiModelId?: string
@@ -48,6 +48,8 @@ export interface ApiHandlerOptions {
   ollamaApiOptionsCtxNum?: string
   azureApiVersion?: string
   o3MiniReasoningEffort?: string
+  /** Injected by Raven when Chaterm runs embedded; not persisted in Chaterm state. */
+  ravenLLMClient?: import('../api/raven-bridge/types').RavenLLMClient
 }
 
 export type ApiConfiguration = ApiHandlerOptions & {

@@ -1,5 +1,6 @@
 import { webContents } from 'electron'
 
+import type { RavenLLMClient } from './agent/api/raven-bridge/types'
 import { isChatermEmbedded } from './config/embedded'
 import { registerEmbeddedIpcStubs } from './embedded/ipc-stubs'
 import { setMainWindowWebContents } from './storage/db/connection'
@@ -18,6 +19,8 @@ export interface RavenEmbedBridge {
 export interface MountChatermOptions {
   webContentsId: number
   bridge: RavenEmbedBridge
+  /** In-process Raven LLM bridge client for Chaterm Agent / DB-AI handlers. */
+  llmClient?: RavenLLMClient
   signals?: ChatermEmbedSignals
 }
 
@@ -29,8 +32,17 @@ interface MountState {
 }
 
 let mountState: MountState | null = null
+let ravenLLMClient: RavenLLMClient | null = null
 
 export { isChatermEmbedded } from './config/embedded'
+
+export function setRavenLLMClient(client: RavenLLMClient | null): void {
+  ravenLLMClient = client
+}
+
+export function getRavenLLMClient(): RavenLLMClient | null {
+  return ravenLLMClient
+}
 
 export function isChatermMounted(): boolean {
   return mountState !== null
@@ -64,6 +76,10 @@ export async function mountChaterm(options: MountChatermOptions): Promise<void> 
     }
   }
 
+  if (options.llmClient) {
+    setRavenLLMClient(options.llmClient)
+  }
+
   mountState = {
     webContentsId: options.webContentsId,
     bridge: options.bridge,
@@ -87,6 +103,7 @@ export async function unmountChaterm(): Promise<void> {
 
   disposeIpcStubs()
   setMainWindowWebContents(null)
+  setRavenLLMClient(null)
 
   try {
     await signals?.onUnmount?.()
