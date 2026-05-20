@@ -1,7 +1,6 @@
 import { webContents } from 'electron'
 
 import type { RavenLLMClient } from './agent/api/raven-bridge/types'
-import { isChatermEmbedded } from './config/embedded'
 import { registerEmbeddedIpcStubs } from './embedded/ipc-stubs'
 import { setMainWindowWebContents } from './storage/db/connection'
 

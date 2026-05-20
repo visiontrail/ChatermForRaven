@@ -37,15 +37,7 @@ setupIndexDBMigrationListener()
 
 mark('chaterm/renderer/willCreateApp')
 const pinia = createPinia()
-if (isChatermEmbedded()) {
-  pinia.use(piniaPluginPersistedstate, {
-    storage: {
-      getItem: () => null,
-      setItem: () => undefined,
-      removeItem: () => undefined
-    }
-  })
-} else {
+if (!isChatermEmbedded()) {
   pinia.use(piniaPluginPersistedstate)
 }
 const app = createApp(App)

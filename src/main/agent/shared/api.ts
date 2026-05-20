@@ -49,7 +49,7 @@ export interface ApiHandlerOptions {
   azureApiVersion?: string
   o3MiniReasoningEffort?: string
   /** Injected by Raven when Chaterm runs embedded; not persisted in Chaterm state. */
-  ravenLLMClient?: import('../api/raven-bridge/types').RavenLLMClient
+  ravenLLMClient?: import('./raven-bridge-types').RavenLLMClient
 }
 
 export type ApiConfiguration = ApiHandlerOptions & {
