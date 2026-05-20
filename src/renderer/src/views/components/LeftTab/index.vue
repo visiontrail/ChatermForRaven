@@ -93,7 +93,7 @@
 
     <div class="bottom-menu">
       <a-tooltip
-        v-for="i in menuTabsData.slice(-2)"
+        v-for="i in bottomMenuTabs"
         :key="i.key"
         :title="i.name"
         :mouse-enter-delay="1"
@@ -138,7 +138,7 @@
     </div>
 
     <div
-      v-if="showUserMenu"
+      v-if="showUserMenu && !isEmbedded"
       class="user-menu"
     >
       <div
@@ -167,7 +167,7 @@
 import { removeToken } from '@/utils/permission'
 const emit = defineEmits(['toggle-menu', 'open-user-tab'])
 import { menuTabsData } from './constants/data'
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { userLogOut } from '@/api/user/user'
 import { userInfoStore } from '@/store/index'
@@ -177,6 +177,7 @@ import { shortcutService } from '@/services/shortcutService'
 import { dataSyncService } from '@/services/dataSyncService'
 import { chatSyncService } from '@/services/chatSyncService'
 import { convertFileLocalResourceSrc } from '@/utils/convertFileLocalResourceSrc'
+import { isChatermEmbedded } from '@/utils/embedded'
 
 const logger = createRendererLogger('leftTab')
 let storageEventHandler: ((e: StorageEvent) => void) | null = null
@@ -190,6 +191,8 @@ const activeKey = ref('workspace')
 const showUserMenu = ref<boolean>(false)
 const isSkippedLogin = ref<boolean>(localStorage.getItem('login-skipped') === 'true')
 const router = useRouter()
+const isEmbedded = isChatermEmbedded()
+const bottomMenuTabs = computed(() => menuTabsData.slice(-2).filter((item) => !(isEmbedded && item.key === 'user')))
 
 const goToLogin = () => {
   showUserMenu.value = false

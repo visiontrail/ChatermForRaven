@@ -1,9 +1,35 @@
 <template>
   <div>
-    <div class="section-header">
+    <template v-if="isEmbedded">
+      <div class="section-header">
+        <h3>{{ $t('user.modelNames') }}</h3>
+      </div>
+      <a-card
+        class="settings-section raven-managed-section"
+        :bordered="false"
+      >
+        <div class="raven-managed-content">
+          <div class="raven-managed-title">{{ $t('user.ravenManagedModelsTitle') }}</div>
+          <p class="setting-description-no-padding raven-managed-description">
+            {{ $t('user.ravenManagedModelsDescription') }}
+          </p>
+          <a-button
+            class="raven-settings-button"
+            @click="openRavenProviderSettings"
+          >
+            {{ $t('user.ravenManagedModelsAction') }}
+          </a-button>
+        </div>
+      </a-card>
+    </template>
+    <div
+      v-if="!isEmbedded"
+      class="section-header"
+    >
       <h3>{{ $t('user.modelNames') }}</h3>
     </div>
     <a-card
+      v-if="!isEmbedded"
       class="settings-section"
       :bordered="false"
     >
@@ -43,7 +69,7 @@
         </div>
       </div>
     </a-card>
-    <div>
+    <div v-if="!isEmbedded">
       <div class="add-model-switch">
         <span class="switch-label">{{ $t('user.addModel') }}</span>
         <a-switch
@@ -562,6 +588,7 @@ import eventBus from '@/utils/eventBus'
 import i18n from '@/locales'
 import { getUser } from '@api/user/user'
 import { isEnterpriseDeployEnabled, syncEnterpriseStateFromUserData } from '@views/components/AiTab/composables/useModelConfiguration'
+import { isChatermEmbedded } from '@/utils/embedded'
 
 const logger = createRendererLogger('settings.model')
 
@@ -589,6 +616,7 @@ interface EnterpriseModelConfig {
 }
 
 const { t } = i18n.global
+const isEmbedded = isChatermEmbedded()
 const modelOptions = ref<ModelOption[]>([])
 const lockedModelNames = ref<Set<string>>(new Set())
 const enterpriseConfigLocked = ref(false)
@@ -649,6 +677,15 @@ const checkLoadingAnthropic = ref(false)
 const checkLoadingOpenAI = ref(false)
 const checkLoadingOllama = ref(false)
 const addModelSwitch = ref(false)
+
+const openRavenProviderSettings = () => {
+  const ravenUI = (window as Window & { ravenUI?: { navigate: (path: string) => void } }).ravenUI
+  if (!ravenUI?.navigate) {
+    logger.warn('Raven provider settings navigation is unavailable')
+    return
+  }
+  ravenUI.navigate('/settings/providers')
+}
 
 // Computed URL preview for OpenAI base URL
 // Mirrors backend normalizeBaseUrl logic: auto-add /v1 unless URL has '#' or already contains /v1
@@ -843,6 +880,9 @@ const saveOllamaConfig = async () => {
 
 // Load saved configuration when component is mounted
 onMounted(async () => {
+  if (isEmbedded) {
+    return
+  }
   await loadModelOptions()
   await loadSavedConfig()
 })
@@ -1296,6 +1336,42 @@ const handleSave = async (provider) => {
 
   :deep(.ant-card-body) {
     padding: 16px;
+  }
+}
+
+.raven-managed-section {
+  margin-right: 20px;
+}
+
+.raven-managed-content {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  max-width: 620px;
+}
+
+.raven-managed-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.raven-managed-description {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.raven-settings-button {
+  background-color: var(--bg-color-octonary) !important;
+  color: var(--text-color) !important;
+  border: none !important;
+  box-shadow: none !important;
+
+  &:hover,
+  &:focus {
+    background-color: var(--bg-color-novenary) !important;
+    color: var(--text-color) !important;
   }
 }
 

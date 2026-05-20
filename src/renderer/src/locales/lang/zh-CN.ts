@@ -433,6 +433,9 @@ export default {
     terminal: '终端',
     apiConfiguration: 'API 配置',
     apiProvider: 'API 提供商',
+    ravenManagedModelsTitle: '模型由 Raven 管理',
+    ravenManagedModelsDescription: 'Chaterm 当前嵌入在 Raven 中，Provider、API Key、Base URL 与模型设置在此处只读。请前往 Raven 设置中修改。',
+    ravenManagedModelsAction: '前往 Raven 设置',
     apiProviderDescribe:
       '通过提供上述密钥或使用默认的AWS凭据提供程序（即~/.aws/credentials或环境变量）进行身份验证。这些凭据仅在本地用于从此客户端发出API请求。',
     awsAccessKey: 'AWS Access Key',

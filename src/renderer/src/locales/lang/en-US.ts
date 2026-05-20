@@ -441,6 +441,10 @@ export default {
     terminal: 'Terminal',
     apiConfiguration: 'API Configuration',
     apiProvider: 'API Provider',
+    ravenManagedModelsTitle: 'Models are managed by Raven',
+    ravenManagedModelsDescription:
+      'Chaterm is embedded in Raven, so provider, API key, base URL, and model settings are read-only here. Update them from Raven Settings.',
+    ravenManagedModelsAction: 'Open Raven Settings',
     apiProviderDescribe:
       'Authenticate by either providing the keys above or use the default AWS credential providers, i.e. ~/.aws/credentials or environment variables. These credentials are only used locally to make API requests from this client.',
     awsAccessKey: 'AWS Access Key',

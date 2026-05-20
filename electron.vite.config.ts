@@ -152,7 +152,22 @@ export default defineConfig(({ mode }) => {
     preload: {
       plugins: [externalizeDepsPlugin()],
       build: {
-        sourcemap: enableSourcemap
+        sourcemap: enableSourcemap,
+        // Multiple preload entries:
+        //  - index: standalone Chaterm preload (window.electron + window.api)
+        //  - browser-preload: SPA URL tracker preload used by Chaterm's webviews
+        //  - raven-embedded: embedded entry that chains `index` then exposes
+        //    `window.ravenLLM` / `window.ravenUI` / `window.ravenEmbedded`.
+        //    Raven copies `out/preload/raven-embedded.js` →
+        //    `resources/chaterm/preload.js`. (See OpenSpec change
+        //    `embed-chaterm-ssh-tab` task 7.3 / 8.1.)
+        rollupOptions: {
+          input: {
+            index: resolve('src/preload/index.ts'),
+            'browser-preload': resolve('src/preload/browser-preload.ts'),
+            'raven-embedded': resolve('src/preload/raven-embedded.ts')
+          }
+        }
       }
     },
     renderer: {
