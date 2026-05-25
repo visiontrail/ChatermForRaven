@@ -1,9 +1,47 @@
 import { getUserInfo } from '@/utils/permission'
 import { dataSyncService } from '@/services/dataSyncService'
+import { isChatermEmbedded } from '@/utils/embedded'
 
 const logger = createRendererLogger('router')
 
+// In Raven-embedded mode authentication is owned by the Raven host application,
+// so the Chaterm login screen is never shown. We auto-provision the same guest
+// session that the upstream "skip login" button uses.
+const ensureEmbeddedGuestSession = () => {
+  if (!isChatermEmbedded()) return
+  if (localStorage.getItem('login-skipped') === 'true' && localStorage.getItem('ctm-token') === 'guest_token') {
+    return
+  }
+  localStorage.setItem('login-skipped', 'true')
+  localStorage.setItem('ctm-token', 'guest_token')
+  localStorage.setItem(
+    'userInfo',
+    JSON.stringify({
+      uid: 999999999,
+      username: 'guest',
+      name: 'Guest',
+      email: 'guest@chaterm.ai',
+      token: 'guest_token'
+    })
+  )
+}
+
 export const beforeEach = async (to, _from, next) => {
+  ensureEmbeddedGuestSession()
+  const embedded = isChatermEmbedded()
+
+  // In embedded mode Chaterm's own main process is NOT running, so IPC channels
+  // like `init-user-database` have no handler. Bypass all auth/db gating and
+  // route every non-/login request straight through. Raven owns auth.
+  if (embedded) {
+    if (to.path === '/login') {
+      next('/')
+    } else {
+      next()
+    }
+    return
+  }
+
   const token = localStorage.getItem('ctm-token')
   const isSkippedLogin = localStorage.getItem('login-skipped') === 'true'
   const isDev = import.meta.env.MODE === 'development'
