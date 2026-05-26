@@ -26,6 +26,7 @@ const RAVEN_LLM_STREAM_PREFIX = 'raven:llm:stream:'
 const RAVEN_UI_NAVIGATE = 'raven:ui:navigate'
 const RAVEN_UI_THEME_CHANGED = 'raven:ui:theme-changed'
 const RAVEN_UI_LOCALE_CHANGED = 'raven:ui:locale-changed'
+const RAVEN_UI_HOST_WARN = 'raven:ui:host-warn'
 
 const PRELOAD_LOG_CHANNEL = 'log:write'
 const PRELOAD_LOG_MODULE = 'raven-embedded'
@@ -44,10 +45,15 @@ export interface RavenUIThemePayload {
 export interface RavenUILocalePayload {
   locale: string
 }
+export interface RavenUIHostWarnPayload {
+  code: string
+  message: string
+}
 export interface RavenUIApi {
   onThemeChanged(listener: (payload: RavenUIThemePayload) => void): () => void
   onLocaleChanged(listener: (payload: RavenUILocalePayload) => void): () => void
   navigate(path: string): void
+  notifyHostWarn(payload: RavenUIHostWarnPayload): void
 }
 
 export interface RavenEmbeddedFlag {
@@ -87,7 +93,8 @@ function createRavenUI(): RavenUIApi {
     },
     // sendToHost surfaces this as an 'ipc-message' event on the Raven <webview>
     // host (see ChatermWebviewHost onIpcMessage).
-    navigate: (path) => ipcRenderer.sendToHost(RAVEN_UI_NAVIGATE, path)
+    navigate: (path) => ipcRenderer.sendToHost(RAVEN_UI_NAVIGATE, path),
+    notifyHostWarn: (payload) => ipcRenderer.sendToHost(RAVEN_UI_HOST_WARN, payload)
   }
 }
 
