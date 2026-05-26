@@ -1,43 +1,114 @@
 import { getUserInfo } from '@/utils/permission'
 import { dataSyncService } from '@/services/dataSyncService'
 import { isChatermEmbedded } from '@/utils/embedded'
+import { createRendererLogger } from '@/utils/logger'
 
 const logger = createRendererLogger('router')
 
-// In Raven-embedded mode authentication is owned by the Raven host application,
-// so the Chaterm login screen is never shown. We auto-provision the same guest
-// session that the upstream "skip login" button uses.
-const ensureEmbeddedGuestSession = () => {
-  if (!isChatermEmbedded()) return
-  if (localStorage.getItem('login-skipped') === 'true' && localStorage.getItem('ctm-token') === 'guest_token') {
-    return
-  }
+const RAVEN_SESSION_TIMEOUT_MS = 3000
+const GUEST_FALLBACK_PAYLOAD = {
+  uid: 999999999,
+  token: 'guest_token',
+  isGuest: true,
+  name: 'Guest'
+} as const
+
+const writeGuestSessionToLocalStorage = (payload: { uid: number; token: string; name: string; isGuest: boolean } = GUEST_FALLBACK_PAYLOAD) => {
   localStorage.setItem('login-skipped', 'true')
-  localStorage.setItem('ctm-token', 'guest_token')
+  localStorage.setItem('ctm-token', payload.token)
   localStorage.setItem(
     'userInfo',
     JSON.stringify({
-      uid: 999999999,
-      username: 'guest',
-      name: 'Guest',
-      email: 'guest@chaterm.ai',
-      token: 'guest_token'
+      uid: payload.uid,
+      username: payload.isGuest ? 'guest' : payload.name,
+      name: payload.name,
+      email: payload.isGuest ? 'guest@chaterm.ai' : '',
+      token: payload.token
     })
   )
 }
 
+// In embedded mode the renderer subscribes to `window.ravenUI.onSession` from
+// `main.ts`; that handler writes the guest payload into localStorage and sets
+// `__ravenSessionReady`. The guard waits on that flag (with a 3s timeout) so
+// the very first navigation only proceeds once identity is in place.
+const waitForRavenSession = async (timeoutMs = RAVEN_SESSION_TIMEOUT_MS): Promise<boolean> => {
+  if (window.__ravenSessionReady) return true
+  return new Promise((resolve) => {
+    const start = Date.now()
+    const interval = window.setInterval(() => {
+      if (window.__ravenSessionReady) {
+        window.clearInterval(interval)
+        resolve(true)
+        return
+      }
+      if (Date.now() - start >= timeoutMs) {
+        window.clearInterval(interval)
+        resolve(false)
+      }
+    }, 50)
+  })
+}
+
+const notifyHostSessionTimeout = () => {
+  const ravenUI = (window as any).ravenUI
+  try {
+    ravenUI?.notifyHostWarn?.({
+      code: 'raven.session.handoff.timeout',
+      message: 'Terminal 初始化超时，已使用本地访客身份继续。如需排查请查看日志。'
+    })
+  } catch (err) {
+    logger.error('notifyHostWarn failed', { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
 export const beforeEach = async (to, _from, next) => {
-  ensureEmbeddedGuestSession()
   const embedded = isChatermEmbedded()
 
-  // In embedded mode Chaterm's own main process is NOT running, so IPC channels
-  // like `init-user-database` have no handler. Bypass all auth/db gating and
-  // route every non-/login request straight through. Raven owns auth.
   if (embedded) {
+    const sessionReady = await waitForRavenSession()
+    if (!sessionReady) {
+      logger.error('raven.session.handoff.timeout', { path: to.path })
+      writeGuestSessionToLocalStorage()
+      window.__ravenSessionReady = true
+      notifyHostSessionTimeout()
+    }
+
     if (to.path === '/login') {
       next('/')
-    } else {
+      return
+    }
+
+    try {
+      const api = window.api as any
+      const dbResult = await api.initUserDatabase({ uid: GUEST_FALLBACK_PAYLOAD.uid })
+      if (!dbResult?.success) {
+        logger.error('chaterm.guest.init.failed', { path: to.path })
+        try {
+          ;(window as any).ravenUI?.notifyHostWarn?.({
+            code: 'chaterm.guest.init.failed',
+            message: 'Terminal 初始化失败 — 查看日志'
+          })
+        } catch (warnErr) {
+          logger.error('notifyHostWarn after guest init failure threw', {
+            error: warnErr instanceof Error ? warnErr.message : String(warnErr)
+          })
+        }
+        next(false)
+        return
+      }
       next()
+    } catch (error) {
+      logger.error('chaterm.guest.init.failed', { error: error instanceof Error ? error.message : String(error) })
+      try {
+        ;(window as any).ravenUI?.notifyHostWarn?.({
+          code: 'chaterm.guest.init.failed',
+          message: 'Terminal 初始化失败 — 查看日志'
+        })
+      } catch {
+        // ignore secondary failures
+      }
+      next(false)
     }
     return
   }

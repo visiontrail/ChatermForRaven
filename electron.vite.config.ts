@@ -89,8 +89,12 @@ export default defineConfig(({ mode }) => {
 
   // Sourcemap: enabled in dev, disabled in production by default (use ENABLE_SOURCEMAP=true to override)
   const isDev = resolvedMode.startsWith('development')
-  const enableSourcemap = isDev || process.env.ENABLE_SOURCEMAP === 'true'
   const chatermEmbedded = process.env.CHATERM_EMBEDDED === '1' || process.env.CHATERM_EMBEDDED === 'true'
+  const enableSourcemap = isDev || process.env.ENABLE_SOURCEMAP === 'true'
+  // Embedded mode: main bundle ships inside Raven via `require()`; force-enable
+  // main-process sourcemaps so Chaterm crashes inside Raven remain debuggable
+  // even in packaged Raven builds. Preload/renderer follow the standalone rule.
+  const enableMainSourcemap = enableSourcemap || chatermEmbedded
 
   return {
     main: {
@@ -133,7 +137,7 @@ export default defineConfig(({ mode }) => {
         'process.env.CHATERM_EMBEDDED': JSON.stringify(chatermEmbedded ? '1' : '')
       },
       build: {
-        sourcemap: enableSourcemap,
+        sourcemap: enableMainSourcemap,
         rollupOptions: {
           onwarn(warning, defaultHandler) {
             if (warning.message?.includes('dynamically imported by') && warning.message?.includes('but also statically imported by')) {

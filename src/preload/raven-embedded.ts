@@ -27,6 +27,7 @@ const RAVEN_UI_NAVIGATE = 'raven:ui:navigate'
 const RAVEN_UI_THEME_CHANGED = 'raven:ui:theme-changed'
 const RAVEN_UI_LOCALE_CHANGED = 'raven:ui:locale-changed'
 const RAVEN_UI_HOST_WARN = 'raven:ui:host-warn'
+const RAVEN_UI_SET_SESSION = 'raven:ui:set-session'
 
 const PRELOAD_LOG_CHANNEL = 'log:write'
 const PRELOAD_LOG_MODULE = 'raven-embedded'
@@ -49,9 +50,16 @@ export interface RavenUIHostWarnPayload {
   code: string
   message: string
 }
+export interface RavenUISessionPayload {
+  uid: number
+  token: string
+  isGuest: boolean
+  name: string
+}
 export interface RavenUIApi {
   onThemeChanged(listener: (payload: RavenUIThemePayload) => void): () => void
   onLocaleChanged(listener: (payload: RavenUILocalePayload) => void): () => void
+  onSession(listener: (payload: RavenUISessionPayload) => void): () => void
   navigate(path: string): void
   notifyHostWarn(payload: RavenUIHostWarnPayload): void
 }
@@ -79,6 +87,15 @@ function createRavenLLM(): RavenLLMApi {
   }
 }
 
+// Preload runs before any SPA script, so we install a session listener
+// immediately and buffer the most recent payload. Raven sends Raven_UI_SetSession
+// during attachWebview, which can fire before the Vue app subscribes; without
+// a buffer that first payload would be lost and the guard would time out.
+let bufferedSessionPayload: RavenUISessionPayload | null = null
+ipcRenderer.on(RAVEN_UI_SET_SESSION, (_e, payload: RavenUISessionPayload) => {
+  bufferedSessionPayload = payload
+})
+
 function createRavenUI(): RavenUIApi {
   return {
     onThemeChanged: (listener) => {
@@ -90,6 +107,18 @@ function createRavenUI(): RavenUIApi {
       const handler = (_e: Electron.IpcRendererEvent, payload: RavenUILocalePayload) => listener(payload)
       ipcRenderer.on(RAVEN_UI_LOCALE_CHANGED, handler)
       return () => ipcRenderer.removeListener(RAVEN_UI_LOCALE_CHANGED, handler)
+    },
+    onSession: (listener) => {
+      const handler = (_e: Electron.IpcRendererEvent, payload: RavenUISessionPayload) => listener(payload)
+      ipcRenderer.on(RAVEN_UI_SET_SESSION, handler)
+      if (bufferedSessionPayload) {
+        // Replay the cached payload asynchronously so subscribers always
+        // observe it the same way (via a future microtask), not synchronously
+        // mid-subscribe.
+        const replay = bufferedSessionPayload
+        queueMicrotask(() => listener(replay))
+      }
+      return () => ipcRenderer.removeListener(RAVEN_UI_SET_SESSION, handler)
     },
     // sendToHost surfaces this as an 'ipc-message' event on the Raven <webview>
     // host (see ChatermWebviewHost onIpcMessage).

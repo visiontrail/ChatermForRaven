@@ -284,327 +284,327 @@ if (!isChatermEmbedded()) {
   app.whenReady().then(async () => {
     mark('chaterm/main/appReady')
 
-  // [Security] Verify ffmpeg.dll integrity asynchronously (Windows Only)
-  let ffmpegVerification: Promise<void> | null = null
-  if (process.platform === 'win32' && process.env.IS_DEV !== 'true') {
-    ffmpegVerification = (async () => {
-      try {
-        const crypto = require('crypto')
-        const ffmpegPath = path.join(path.dirname(process.execPath), 'ffmpeg.dll')
-        const KNOWN_HASH = 'E7AEC5CA86D80540EA30C5ACDF0A13ACB34D1D9DD0F9E78B36FB21776B711A1E'
-
+    // [Security] Verify ffmpeg.dll integrity asynchronously (Windows Only)
+    let ffmpegVerification: Promise<void> | null = null
+    if (process.platform === 'win32' && process.env.IS_DEV !== 'true') {
+      ffmpegVerification = (async () => {
         try {
-          await fs.access(ffmpegPath)
-        } catch {
-          logger.warn('[Security] ffmpeg.dll not found for verification.')
-          return
+          const crypto = require('crypto')
+          const ffmpegPath = path.join(path.dirname(process.execPath), 'ffmpeg.dll')
+          const KNOWN_HASH = 'E7AEC5CA86D80540EA30C5ACDF0A13ACB34D1D9DD0F9E78B36FB21776B711A1E'
+
+          try {
+            await fs.access(ffmpegPath)
+          } catch {
+            logger.warn('[Security] ffmpeg.dll not found for verification.')
+            return
+          }
+
+          logger.info('[Security] Verifying ffmpeg.dll integrity...')
+          const buffer = await fs.readFile(ffmpegPath)
+          const hash = crypto.createHash('sha256').update(buffer).digest('hex').toUpperCase()
+
+          if (hash !== KNOWN_HASH) {
+            logger.error(`[Security] CRITICAL: ffmpeg.dll hash mismatch! Expected: ${KNOWN_HASH}, Actual: ${hash}`)
+            const { dialog } = require('electron')
+            dialog.showErrorBox(
+              'Security Error',
+              'System integrity check failed (ffmpeg.dll). The application files may have been tampered with. Application will terminate.'
+            )
+            app.quit()
+            process.exit(1) // Force exit
+          }
+          logger.info('[Security] ffmpeg.dll integrity verified.')
+        } catch (error) {
+          logger.error('[Security] Failed to verify ffmpeg.dll', { error: error })
         }
+      })()
+    }
+    // Set edition-specific AppUserModelId for Windows taskbar grouping and process identification
+    const edition = getEdition()
+    const appUserModelId = edition === 'global' ? 'ai.chaterm.global' : 'ai.chaterm.cn'
+    electronApp.setAppUserModelId(appUserModelId)
 
-        logger.info('[Security] Verifying ffmpeg.dll integrity...')
-        const buffer = await fs.readFile(ffmpegPath)
-        const hash = crypto.createHash('sha256').update(buffer).digest('hex').toUpperCase()
+    // Start CN user data migration in parallel (usually a no-op, but can be
+    // slow on first launch of global edition due to process detection)
+    const migrationPromise = migrateCnUserDataOnFirstLaunch().catch((err) => logger.error('CN migration failed', { error: err }))
 
-        if (hash !== KNOWN_HASH) {
-          logger.error(`[Security] CRITICAL: ffmpeg.dll hash mismatch! Expected: ${KNOWN_HASH}, Actual: ${hash}`)
-          const { dialog } = require('electron')
-          dialog.showErrorBox(
-            'Security Error',
-            'System integrity check failed (ffmpeg.dll). The application files may have been tampered with. Application will terminate.'
-          )
-          app.quit()
-          process.exit(1) // Force exit
+    if (process.platform === 'darwin') {
+      app.dock?.setIcon(join(__dirname, '../../resources/icon.png'))
+    }
+
+    protocol.handle('local-resource', (request) => {
+      // Strip query string before resolving to a file path (e.g. cache-busting ?t=xxx params)
+      const rawPath = request.url.slice('local-resource://'.length).split('?')[0]
+      let filePath = decodeURIComponent(rawPath)
+
+      if (process.platform === 'win32' && /^\/[A-Za-z]:\//.test(filePath)) {
+        filePath = filePath.slice(1)
+      }
+
+      if (filePath.length >= 2 && /[A-Z]/.test(filePath[0]) && filePath[1] === '/') {
+        filePath = filePath[0] + ':' + filePath.slice(1)
+      } else if (process.platform !== 'win32' && !filePath.startsWith('/') && !filePath.includes(':')) {
+        if (filePath.startsWith('Users/') || filePath.startsWith('home/') || filePath.startsWith('var/') || filePath.startsWith('opt/')) {
+          filePath = '/' + filePath
         }
-        logger.info('[Security] ffmpeg.dll integrity verified.')
-      } catch (error) {
-        logger.error('[Security] Failed to verify ffmpeg.dll', { error: error })
       }
-    })()
-  }
-  // Set edition-specific AppUserModelId for Windows taskbar grouping and process identification
-  const edition = getEdition()
-  const appUserModelId = edition === 'global' ? 'ai.chaterm.global' : 'ai.chaterm.cn'
-  electronApp.setAppUserModelId(appUserModelId)
 
-  // Start CN user data migration in parallel (usually a no-op, but can be
-  // slow on first launch of global edition due to process detection)
-  const migrationPromise = migrateCnUserDataOnFirstLaunch().catch((err) => logger.error('CN migration failed', { error: err }))
-
-  if (process.platform === 'darwin') {
-    app.dock?.setIcon(join(__dirname, '../../resources/icon.png'))
-  }
-
-  protocol.handle('local-resource', (request) => {
-    // Strip query string before resolving to a file path (e.g. cache-busting ?t=xxx params)
-    const rawPath = request.url.slice('local-resource://'.length).split('?')[0]
-    let filePath = decodeURIComponent(rawPath)
-
-    if (process.platform === 'win32' && /^\/[A-Za-z]:\//.test(filePath)) {
-      filePath = filePath.slice(1)
-    }
-
-    if (filePath.length >= 2 && /[A-Z]/.test(filePath[0]) && filePath[1] === '/') {
-      filePath = filePath[0] + ':' + filePath.slice(1)
-    } else if (process.platform !== 'win32' && !filePath.startsWith('/') && !filePath.includes(':')) {
-      if (filePath.startsWith('Users/') || filePath.startsWith('home/') || filePath.startsWith('var/') || filePath.startsWith('opt/')) {
-        filePath = '/' + filePath
-      }
-    }
-
-    try {
-      const fileUrl = pathToFileURL(filePath).toString()
-      return net.fetch(fileUrl)
-    } catch (error) {
-      logger.error('Error in local-resource handler', { error: error })
-      return new Response('File Not Found', { status: 404 })
-    }
-  })
-
-  // Register window drag handler (register only once)
-  ipcMain.handle('custom-adsorption', (_, res) => {
-    const { appX, appY, width, height } = res
-
-    // Get screen dimensions
-    const { screen } = require('electron')
-    const primaryDisplay = screen.getPrimaryDisplay()
-    const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize
-
-    // Calculate boundary snapping
-    let finalX = Math.round(appX)
-    let finalY = Math.round(appY)
-
-    // Left and right boundary snapping
-    if (Math.abs(appX) < 20) {
-      finalX = 0
-    } else if (Math.abs(screenWidth - (appX + width)) < 20) {
-      finalX = Math.round(screenWidth - width)
-    }
-
-    // Top and bottom boundary snapping
-    if (Math.abs(appY) < 20) {
-      finalY = 0
-    } else if (Math.abs(screenHeight - (appY + height)) < 20) {
-      finalY = Math.round(screenHeight - height)
-    }
-
-    // Directly set window position, using smaller easing coefficient for smooth effect
-    const currentBounds = mainWindow.getBounds()
-    const newX = Math.round(currentBounds.x + (finalX - currentBounds.x) * 0.5)
-    const newY = Math.round(currentBounds.y + (finalY - currentBounds.y) * 0.5)
-
-    mainWindow.setBounds({
-      x: newX,
-      y: newY,
-      width: Math.round(width),
-      height: Math.round(height)
-    })
-  })
-
-  app.on('browser-window-created', (_, _window) => {})
-
-  // IPC test
-  ipcMain.on('ping', () => logger.info('pong'))
-  mark('chaterm/main/willSetupIPC')
-  setupIPC()
-  registerPerfIpcHandlers()
-  mark('chaterm/main/didSetupIPC')
-
-  // Create the BrowserWindow. Content loading starts in parallel (not awaited).
-  mark('chaterm/main/willCreateWindow')
-  await createWindow()
-  mark('chaterm/main/didCreateWindow')
-
-  // Initialize storage system (only needs the BrowserWindow reference)
-  mark('chaterm/main/willInitStorage')
-  initializeStorageMain(mainWindow)
-  mark('chaterm/main/didInitStorage')
-
-  // Register SSH components (only needs ipcMain, no window content needed)
-  mark('chaterm/main/willRegisterSSH')
-  registerSSHHandlers()
-  registerLocalSSHHandlers()
-  registerRemoteTerminalHandlers()
-  registerFileSystemHandlers()
-  mark('chaterm/main/didRegisterSSH')
-  registerUpdater(mainWindow, (value) => (forceQuit = value))
-  setupPluginIpc()
-
-  // Register K8s handlers
-  registerK8sHandlers()
-
-  // Register Database asset handlers
-  registerDbAssetHandlers()
-
-  // Register Database AI (single-turn, track A) handlers
-  registerDbAiHandlers()
-
-  // Register interactive command IPC handlers
-  setupInteractionIpcHandlers()
-
-  // Run plugin loading and security config in parallel
-  mark('chaterm/main/willLoadPlugins')
-  await Promise.all([
-    loadAllPlugins().then(() => mark('chaterm/main/didLoadPlugins')),
-    (async () => {
       try {
-        mark('chaterm/main/willLoadSecurityConfig')
-        const SecurityConfigModule = await import('./agent/core/security/SecurityConfig')
-        const { SecurityConfigManager } = SecurityConfigModule
-        const securityManager = new SecurityConfigManager()
-        await securityManager.loadConfig()
-        mark('chaterm/main/didLoadSecurityConfig')
-        logger.info('Security configuration initialized successfully')
+        const fileUrl = pathToFileURL(filePath).toString()
+        return net.fetch(fileUrl)
       } catch (error) {
-        logger.error('Failed to initialize security configuration', { error: error })
+        logger.error('Error in local-resource handler', { error: error })
+        return new Response('File Not Found', { status: 404 })
       }
-    })()
-  ])
+    })
 
-  app.on('activate', function () {
-    // On macOS it's common to re-create a window in the app when the
-    // dock icon is clicked and there are no other windows open.
-    if (mainWindow) {
-      mainWindow.show()
-    } else if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow()
-    }
-  })
+    // Register window drag handler (register only once)
+    ipcMain.handle('custom-adsorption', (_, res) => {
+      const { appX, appY, width, height } = res
 
-  try {
-    // Create a message sender that routes messages to dedicated IPC channels
-    const messageSender = (message) => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        // Route commandGenerationResponse to its dedicated channel
-        if (message.type === 'commandGenerationResponse') {
-          mainWindow.webContents.send('command-generation-response', {
-            command: message.command,
-            error: message.error,
-            tabId: message.tabId
-          })
-          return Promise.resolve(true)
-        }
+      // Get screen dimensions
+      const { screen } = require('electron')
+      const primaryDisplay = screen.getPrimaryDisplay()
+      const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize
 
-        // Route explainCommandResponse to its dedicated channel
-        if (message.type === 'explainCommandResponse') {
-          mainWindow.webContents.send('command-explain-response', {
-            explanation: message.explanation,
-            error: message.error,
-            tabId: message.tabId,
-            commandMessageId: message.commandMessageId
-          })
-          return Promise.resolve(true)
-        }
+      // Calculate boundary snapping
+      let finalX = Math.round(appX)
+      let finalY = Math.round(appY)
 
-        // Route mcpServersUpdate to its dedicated channel for backward compatibility
-        if (message.type === 'mcpServersUpdate') {
-          mainWindow.webContents.send('mcp:status-update', message.mcpServers)
-          return Promise.resolve(true)
-        }
-
-        // Route mcpServerUpdate (singular) to its dedicated channel for granular updates
-        if (message.type === 'mcpServerUpdate') {
-          mainWindow.webContents.send('mcp:server-update', message.mcpServer)
-          return Promise.resolve(true)
-        }
-
-        // Route mcpConfigFileChanged to its dedicated channel
-        if (message.type === 'mcpConfigFileChanged') {
-          mainWindow.webContents.send('mcp:config-file-changed', message.content)
-          return Promise.resolve(true)
-        }
-
-        // Default: send to the general channel for other message types
-        mainWindow.webContents.send('main-to-webview', message)
-        return Promise.resolve(true)
+      // Left and right boundary snapping
+      if (Math.abs(appX) < 20) {
+        finalX = 0
+      } else if (Math.abs(screenWidth - (appX + width)) < 20) {
+        finalX = Math.round(screenWidth - width)
       }
-      return Promise.resolve(false)
-    }
 
-    mark('chaterm/main/willCreateController')
-    controller = new Controller(messageSender, ensureMcpConfigFileExists)
-    mark('chaterm/main/didCreateController')
-  } catch (error) {
-    logger.error('Failed to initialize Controller', { error: error })
-  }
+      // Top and bottom boundary snapping
+      if (Math.abs(appY) < 20) {
+        finalY = 0
+      } else if (Math.abs(screenHeight - (appY + height)) < 20) {
+        finalY = Math.round(screenHeight - height)
+      }
 
-  // All IPC handlers and Controller are ready - release the main-window-show gate.
-  // The renderer's first IPC call (main-window-show) awaits winReady, so there
-  // is no race condition even though content may still be loading.
-  winReadyResolve()
+      // Directly set window position, using smaller easing coefficient for smooth effect
+      const currentBounds = mainWindow.getBounds()
+      const newX = Math.round(currentBounds.x + (finalX - currentBounds.x) * 0.5)
+      const newY = Math.round(currentBounds.y + (finalY - currentBounds.y) * 0.5)
 
-  // Ensure parallel tasks complete before marking ready
-  if (ffmpegVerification) await ffmpegVerification
-  await migrationPromise
+      mainWindow.setBounds({
+        x: newX,
+        y: newY,
+        width: Math.round(width),
+        height: Math.round(height)
+      })
+    })
 
-  // Function to initialize telemetry setting
-  const initializeTelemetrySetting = async () => {
-    let telemetrySetting: TelemetrySetting
+    app.on('browser-window-created', (_, _window) => {})
+
+    // IPC test
+    ipcMain.on('ping', () => logger.info('pong'))
+    mark('chaterm/main/willSetupIPC')
+    setupIPC()
+    registerPerfIpcHandlers()
+    mark('chaterm/main/didSetupIPC')
+
+    // Create the BrowserWindow. Content loading starts in parallel (not awaited).
+    mark('chaterm/main/willCreateWindow')
+    await createWindow()
+    mark('chaterm/main/didCreateWindow')
+
+    // Initialize storage system (only needs the BrowserWindow reference)
+    mark('chaterm/main/willInitStorage')
+    initializeStorageMain(mainWindow)
+    mark('chaterm/main/didInitStorage')
+
+    // Register SSH components (only needs ipcMain, no window content needed)
+    mark('chaterm/main/willRegisterSSH')
+    registerSSHHandlers()
+    registerLocalSSHHandlers()
+    registerRemoteTerminalHandlers()
+    registerFileSystemHandlers()
+    mark('chaterm/main/didRegisterSSH')
+    registerUpdater(mainWindow, (value) => (forceQuit = value))
+    setupPluginIpc()
+
+    // Register K8s handlers
+    registerK8sHandlers()
+
+    // Register Database asset handlers
+    registerDbAssetHandlers()
+
+    // Register Database AI (single-turn, track A) handlers
+    registerDbAiHandlers()
+
+    // Register interactive command IPC handlers
+    setupInteractionIpcHandlers()
+
+    // Run plugin loading and security config in parallel
+    mark('chaterm/main/willLoadPlugins')
+    await Promise.all([
+      loadAllPlugins().then(() => mark('chaterm/main/didLoadPlugins')),
+      (async () => {
+        try {
+          mark('chaterm/main/willLoadSecurityConfig')
+          const SecurityConfigModule = await import('./agent/core/security/SecurityConfig')
+          const { SecurityConfigManager } = SecurityConfigModule
+          const securityManager = new SecurityConfigManager()
+          await securityManager.loadConfig()
+          mark('chaterm/main/didLoadSecurityConfig')
+          logger.info('Security configuration initialized successfully')
+        } catch (error) {
+          logger.error('Failed to initialize security configuration', { error: error })
+        }
+      })()
+    ])
+
+    app.on('activate', function () {
+      // On macOS it's common to re-create a window in the app when the
+      // dock icon is clicked and there are no other windows open.
+      if (mainWindow) {
+        mainWindow.show()
+      } else if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow()
+      }
+    })
+
     try {
-      telemetrySetting = (await getGlobalState('telemetrySetting')) || 'enabled'
+      // Create a message sender that routes messages to dedicated IPC channels
+      const messageSender = (message) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          // Route commandGenerationResponse to its dedicated channel
+          if (message.type === 'commandGenerationResponse') {
+            mainWindow.webContents.send('command-generation-response', {
+              command: message.command,
+              error: message.error,
+              tabId: message.tabId
+            })
+            return Promise.resolve(true)
+          }
+
+          // Route explainCommandResponse to its dedicated channel
+          if (message.type === 'explainCommandResponse') {
+            mainWindow.webContents.send('command-explain-response', {
+              explanation: message.explanation,
+              error: message.error,
+              tabId: message.tabId,
+              commandMessageId: message.commandMessageId
+            })
+            return Promise.resolve(true)
+          }
+
+          // Route mcpServersUpdate to its dedicated channel for backward compatibility
+          if (message.type === 'mcpServersUpdate') {
+            mainWindow.webContents.send('mcp:status-update', message.mcpServers)
+            return Promise.resolve(true)
+          }
+
+          // Route mcpServerUpdate (singular) to its dedicated channel for granular updates
+          if (message.type === 'mcpServerUpdate') {
+            mainWindow.webContents.send('mcp:server-update', message.mcpServer)
+            return Promise.resolve(true)
+          }
+
+          // Route mcpConfigFileChanged to its dedicated channel
+          if (message.type === 'mcpConfigFileChanged') {
+            mainWindow.webContents.send('mcp:config-file-changed', message.content)
+            return Promise.resolve(true)
+          }
+
+          // Default: send to the general channel for other message types
+          mainWindow.webContents.send('main-to-webview', message)
+          return Promise.resolve(true)
+        }
+        return Promise.resolve(false)
+      }
+
+      mark('chaterm/main/willCreateController')
+      controller = new Controller(messageSender, ensureMcpConfigFileExists)
+      mark('chaterm/main/didCreateController')
     } catch (error) {
-      telemetrySetting = 'enabled'
-    }
-    if (parsePolicyEnabled(process.env.CHATERM_TELEMETRY_ENABLED) === false) {
-      telemetrySetting = 'disabled'
-      await updateGlobalState('telemetrySetting', 'disabled')
+      logger.error('Failed to initialize Controller', { error: error })
     }
 
-    if (controller) {
-      await controller.updateTelemetrySetting(telemetrySetting)
+    // All IPC handlers and Controller are ready - release the main-window-show gate.
+    // The renderer's first IPC call (main-window-show) awaits winReady, so there
+    // is no race condition even though content may still be loading.
+    winReadyResolve()
+
+    // Ensure parallel tasks complete before marking ready
+    if (ffmpegVerification) await ffmpegVerification
+    await migrationPromise
+
+    // Function to initialize telemetry setting
+    const initializeTelemetrySetting = async () => {
+      let telemetrySetting: TelemetrySetting
+      try {
+        telemetrySetting = (await getGlobalState('telemetrySetting')) || 'enabled'
+      } catch (error) {
+        telemetrySetting = 'enabled'
+      }
+      if (parsePolicyEnabled(process.env.CHATERM_TELEMETRY_ENABLED) === false) {
+        telemetrySetting = 'disabled'
+        await updateGlobalState('telemetrySetting', 'disabled')
+      }
+
+      if (controller) {
+        await controller.updateTelemetrySetting(telemetrySetting)
+      }
+
+      const isFirstLaunch = checkIsFirstLaunch()
+
+      if (isFirstLaunch) {
+        telemetryService.captureAppFirstLaunch()
+      }
+
+      telemetryService.captureAppStarted()
     }
 
-    const isFirstLaunch = checkIsFirstLaunch()
-
-    if (isFirstLaunch) {
-      telemetryService.captureAppFirstLaunch()
-    }
-
-    telemetryService.captureAppStarted()
-  }
-
-  // Call the test function (imported from ./agent/core/storage/state.ts)
-  if (mainWindow && mainWindow.webContents) {
-    if (mainWindow.webContents.isLoading()) {
-      mainWindow.webContents.once('did-finish-load', () => {
-        logger.info('[Main Index] Main window finished loading. Calling testRendererStorageFromMain.')
+    // Call the test function (imported from ./agent/core/storage/state.ts)
+    if (mainWindow && mainWindow.webContents) {
+      if (mainWindow.webContents.isLoading()) {
+        mainWindow.webContents.once('did-finish-load', () => {
+          logger.info('[Main Index] Main window finished loading. Calling testRendererStorageFromMain.')
+          testRendererStorageFromMain()
+        })
+      } else {
+        logger.info('[Main Index] Main window already loaded. Calling testRendererStorageFromMain directly.')
         testRendererStorageFromMain()
-      })
+      }
     } else {
-      logger.info('[Main Index] Main window already loaded. Calling testRendererStorageFromMain directly.')
-      testRendererStorageFromMain()
+      logger.warn('[Main Index] mainWindow or webContents not available when trying to schedule testRendererStorageFromMain.')
     }
-  } else {
-    logger.warn('[Main Index] mainWindow or webContents not available when trying to schedule testRendererStorageFromMain.')
-  }
 
-  mainWindow.webContents.on('will-navigate', (event, url) => {
-    const protocolPrefix = getProtocolPrefix()
-    const isExternal = !url.startsWith('http://localhost') && !url.startsWith('file://') && !url.startsWith(protocolPrefix)
+    mainWindow.webContents.on('will-navigate', (event, url) => {
+      const protocolPrefix = getProtocolPrefix()
+      const isExternal = !url.startsWith('http://localhost') && !url.startsWith('file://') && !url.startsWith(protocolPrefix)
 
-    if (isExternal) {
-      event.preventDefault()
-      shell.openExternal(url)
+      if (isExternal) {
+        event.preventDefault()
+        shell.openExternal(url)
+      }
+    })
+
+    setTimeout(initializeTelemetrySetting, 1000)
+
+    mark('chaterm/main/ready')
+
+    // Log startup timeline in development mode.
+    // Wait for the renderer content to finish loading first so that renderer
+    // perf marks have time to be reported back to the main process.
+    if (is.dev) {
+      windowContentLoaded
+        .then(() => {
+          mark('chaterm/main/windowDidFinishLoad')
+          collectAndLogTimeline(mainWindow)
+        })
+        .catch((err) => {
+          logger.warn('windowContentLoaded rejected, logging main-process timeline only', { error: err })
+          mark('chaterm/main/windowDidFinishLoad')
+          logStartupTimeline()
+        })
     }
-  })
-
-  setTimeout(initializeTelemetrySetting, 1000)
-
-  mark('chaterm/main/ready')
-
-  // Log startup timeline in development mode.
-  // Wait for the renderer content to finish loading first so that renderer
-  // perf marks have time to be reported back to the main process.
-  if (is.dev) {
-    windowContentLoaded
-      .then(() => {
-        mark('chaterm/main/windowDidFinishLoad')
-        collectAndLogTimeline(mainWindow)
-      })
-      .catch((err) => {
-        logger.warn('windowContentLoaded rejected, logging main-process timeline only', { error: err })
-        mark('chaterm/main/windowDidFinishLoad')
-        logStartupTimeline()
-      })
-  }
   })
 }
 
@@ -619,37 +619,42 @@ if (!isChatermEmbedded()) {
   })
 }
 
-// Add the before-quit event listener here or towards the end of the file
-app.on('before-quit', async () => {
-  forceQuit = true
-  logger.info('Application is about to quit. Disposing resources...')
-  if (controller) {
-    try {
-      await controller.dispose()
-      logger.info('Controller disposed successfully.')
-    } catch (error) {
-      logger.error('Error during controller disposal', { error: error })
+// Add the before-quit event listener here or towards the end of the file.
+// In embedded mode Raven owns the Electron lifecycle; cleanup is driven by
+// ChatermProcessService.destroy() -> unmountChaterm(). Registering this
+// handler when embedded causes double-cleanup races on shared resources.
+if (!isChatermEmbedded()) {
+  app.on('before-quit', async () => {
+    forceQuit = true
+    logger.info('Application is about to quit. Disposing resources...')
+    if (controller) {
+      try {
+        await controller.dispose()
+        logger.info('Controller disposed successfully.')
+      } catch (error) {
+        logger.error('Error during controller disposal', { error: error })
+      }
     }
-  }
-  if (dataSyncController) {
-    try {
-      await dataSyncController.destroy()
-      dataSyncController = null
-      logger.info('Data sync controller disposed successfully.')
-    } catch (error) {
-      logger.error('Error during data sync controller disposal', { error: error })
+    if (dataSyncController) {
+      try {
+        await dataSyncController.destroy()
+        dataSyncController = null
+        logger.info('Data sync controller disposed successfully.')
+      } catch (error) {
+        logger.error('Error during data sync controller disposal', { error: error })
+      }
     }
-  }
-  if (chatSyncScheduler) {
-    try {
-      chatSyncScheduler.destroy()
-      chatSyncScheduler = null
-      logger.info('Chat sync scheduler disposed successfully.')
-    } catch (error) {
-      logger.error('Error during chat sync scheduler disposal', { error: error })
+    if (chatSyncScheduler) {
+      try {
+        chatSyncScheduler.destroy()
+        chatSyncScheduler = null
+        logger.info('Chat sync scheduler disposed successfully.')
+      } catch (error) {
+        logger.error('Error during chat sync scheduler disposal', { error: error })
+      }
     }
-  }
-})
+  })
+}
 
 const getCookieByName = async (name) => {
   try {

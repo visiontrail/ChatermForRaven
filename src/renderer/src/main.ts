@@ -35,6 +35,48 @@ import { setupIndexDBMigrationListener } from './services/indexdb-migration-list
 // Initialize IndexedDB migration listener
 setupIndexDBMigrationListener()
 
+// Raven embeds Chaterm and supplies the user identity over `window.ravenUI.onSession`.
+// We subscribe here — before Vue / router boot — so the payload is buffered into
+// localStorage in time for the router guard to read it on the very first navigation.
+// See guards.ts for the wait-with-timeout fallback when no payload arrives.
+// Local mirror of preload's RavenUIApi.onSession contract — the preload file
+// lives outside tsconfig.web.json's include set, so we re-declare the minimal
+// shape we touch here rather than pulling it in transitively.
+interface RavenSessionPayload {
+  uid: number
+  token: string
+  isGuest: boolean
+  name: string
+}
+interface RavenUIShim {
+  onSession?: (listener: (payload: RavenSessionPayload) => void) => () => void
+}
+declare global {
+  interface Window {
+    __ravenSessionReady?: boolean
+  }
+}
+if (isChatermEmbedded()) {
+  const ravenUI = (window as unknown as { ravenUI?: RavenUIShim }).ravenUI
+  if (ravenUI?.onSession) {
+    ravenUI.onSession((payload) => {
+      localStorage.setItem('login-skipped', 'true')
+      localStorage.setItem('ctm-token', payload.token)
+      localStorage.setItem(
+        'userInfo',
+        JSON.stringify({
+          uid: payload.uid,
+          username: payload.isGuest ? 'guest' : payload.name,
+          name: payload.name,
+          email: payload.isGuest ? 'guest@chaterm.ai' : '',
+          token: payload.token
+        })
+      )
+      window.__ravenSessionReady = true
+    })
+  }
+}
+
 mark('chaterm/renderer/willCreateApp')
 const pinia = createPinia()
 if (!isChatermEmbedded()) {
