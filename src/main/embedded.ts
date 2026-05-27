@@ -1,6 +1,7 @@
 import { webContents } from 'electron'
 
 import type { RavenLLMClient } from './agent/api/raven-bridge/types'
+import { bootstrapChatermMain, type BootstrapDisposer, type BootstrapResult } from './embedded/bootstrap'
 import { registerEmbeddedIpcStubs } from './embedded/ipc-stubs'
 import { setMainWindowWebContents } from './storage/db/connection'
 
@@ -28,6 +29,7 @@ interface MountState {
   bridge: RavenEmbedBridge
   signals?: ChatermEmbedSignals
   disposeIpcStubs: () => void
+  bootstrapDisposers: BootstrapDisposer[]
 }
 
 let mountState: MountState | null = null
@@ -79,14 +81,32 @@ export async function mountChaterm(options: MountChatermOptions): Promise<void> 
     setRavenLLMClient(options.llmClient)
   }
 
+  let bootstrapResult: BootstrapResult
+  try {
+    bootstrapResult = await bootstrapChatermMain({
+      mode: 'embedded',
+      validateSender: (event) => event.sender.id === options.webContentsId
+    })
+  } catch (error) {
+    // Roll back the partial mount state if bootstrap fails.
+    disposeIpcStubs()
+    setMainWindowWebContents(null)
+    setRavenLLMClient(null)
+    throw error
+  }
+
   mountState = {
     webContentsId: options.webContentsId,
     bridge: options.bridge,
     signals: options.signals,
-    disposeIpcStubs
+    disposeIpcStubs,
+    bootstrapDisposers: bootstrapResult.disposers
   }
 
-  logger.info('Chaterm embedded module mounted', { webContentsId: options.webContentsId })
+  logger.info('Chaterm embedded module mounted', {
+    webContentsId: options.webContentsId,
+    bootstrapDisposers: bootstrapResult.disposers.length
+  })
 }
 
 /**
@@ -97,10 +117,26 @@ export async function unmountChaterm(): Promise<void> {
     return
   }
 
-  const { signals, disposeIpcStubs, webContentsId } = mountState
+  const { signals, disposeIpcStubs, webContentsId, bootstrapDisposers } = mountState
   mountState = null
 
-  disposeIpcStubs()
+  // Reverse-order disposal: bootstrap subsystem handlers first, then stubs,
+  // then shared singletons. Each step is wrapped so a single failure does not
+  // skip the remaining cleanup.
+  for (let i = bootstrapDisposers.length - 1; i >= 0; i--) {
+    try {
+      await bootstrapDisposers[i]()
+    } catch (error) {
+      logger.warn('Chaterm bootstrap disposer failed', { error, webContentsId, index: i })
+    }
+  }
+
+  try {
+    disposeIpcStubs()
+  } catch (error) {
+    logger.warn('Chaterm embed disposeIpcStubs failed', { error, webContentsId })
+  }
+
   setMainWindowWebContents(null)
   setRavenLLMClient(null)
 

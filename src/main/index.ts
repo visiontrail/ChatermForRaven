@@ -1,5 +1,5 @@
 // ============ Performance Marks (must be the very first import) ============
-import { mark, registerPerfIpcHandlers, collectAndLogTimeline, logStartupTimeline } from '@perf'
+import { mark, collectAndLogTimeline, logStartupTimeline } from '@perf'
 // 'chaterm/main/start' is recorded at module load time inside @perf
 
 // ============ Initialize userData path FIRST (MUST be before all other imports) ============
@@ -10,6 +10,7 @@ mark('chaterm/main/didInitUserDataPath')
 // ============ userData path initialization complete ============
 
 import { isChatermEmbedded, mountChaterm, unmountChaterm } from './embedded'
+import { bootstrapChatermMain } from './embedded/bootstrap'
 export { isChatermEmbedded, mountChaterm, unmountChaterm }
 export type { MountChatermOptions, ChatermEmbedSignals, RavenEmbedBridge } from './embedded'
 
@@ -34,12 +35,6 @@ import { migrateCnUserDataOnFirstLaunch } from './storage/editionDataMigration'
 // Set environment variables
 process.env.IS_DEV = is.dev ? 'true' : 'false'
 
-import { registerSSHHandlers } from './ssh/sshHandle'
-import { registerLocalSSHHandlers } from './ssh/localSSHHandle'
-import { registerRemoteTerminalHandlers } from './ssh/agentHandle'
-import { registerK8sHandlers } from './k8s/k8sHandle'
-import { registerDbAssetHandlers } from './database/dbAssetHandle'
-import { registerDbAiHandlers } from './database/dbAiHandle'
 import { autoCompleteDatabaseService, ChatermDatabaseService, setCurrentUserId } from './storage/database'
 import { getGuestUserId } from './storage/db/connection'
 import { Controller } from './agent/core/controller'
@@ -54,7 +49,6 @@ import {
 import { getTaskMetadata, saveTaskTitle, saveTaskFavorite, getTaskList } from './agent/core/storage/disk'
 import { createMainWindow, type WindowCreationResult } from './windowManager'
 import { registerUpdater } from './updater'
-import { setupPluginIpc } from './plugin/pluginIpc'
 import { telemetryService, checkIsFirstLaunch, getMacAddress } from './agent/services/telemetry/TelemetryService'
 import { envelopeEncryptionService } from './storage/data_sync/envelope_encryption/service'
 import { versionPromptService } from './version/versionPromptService'
@@ -77,13 +71,10 @@ import { capabilityRegistry } from './ssh/capabilityRegistry'
 import { getActualTheme, loadUserTheme } from './themeManager'
 import { getLoginBaseUrl, getEdition, getProtocolPrefix, getProtocolName } from './config/edition'
 import { TelemetrySetting } from '@shared/TelemetrySetting'
-import { registerKnowledgeBaseHandlers, initKbSearchManager, closeKbSearchManager } from './services/knowledgebase'
-import { registerStageChatAttachmentHandlers } from './services/agent/stageChatAttachment'
+import { initKbSearchManager, closeKbSearchManager } from './services/knowledgebase'
 import { startKbSync, stopKbSync } from './services/knowledgebase/sync'
-import { setupInteractionIpcHandlers } from './agent/services/interaction-detector/ipc-handlers'
 import type { WebviewMessage } from '@shared/WebviewMessage'
 import type { SkillMetadata } from '@shared/skills'
-import { registerFileSystemHandlers } from './ssh/sftpTransfer'
 import { initLogging, logRendererCrash } from '@logging'
 import { parseXshellWakeupFromArgv, redactXshellWakeupForLog, type XshellWakeupPayload } from './integrations/xshellWakeup'
 
@@ -405,8 +396,14 @@ if (!isChatermEmbedded()) {
     ipcMain.on('ping', () => logger.info('pong'))
     mark('chaterm/main/willSetupIPC')
     setupIPC()
-    registerPerfIpcHandlers()
     mark('chaterm/main/didSetupIPC')
+
+    // Register IPC-pure subsystems (SSH / K8s / DB-asset / DB-AI / plugin /
+    // perf / interaction / knowledge base) via the shared bootstrap so the
+    // same path runs in embedded mode through `mountChaterm()`.
+    mark('chaterm/main/willBootstrapSubsystems')
+    await bootstrapChatermMain({ mode: 'standalone' })
+    mark('chaterm/main/didBootstrapSubsystems')
 
     // Create the BrowserWindow. Content loading starts in parallel (not awaited).
     mark('chaterm/main/willCreateWindow')
@@ -418,27 +415,7 @@ if (!isChatermEmbedded()) {
     initializeStorageMain(mainWindow)
     mark('chaterm/main/didInitStorage')
 
-    // Register SSH components (only needs ipcMain, no window content needed)
-    mark('chaterm/main/willRegisterSSH')
-    registerSSHHandlers()
-    registerLocalSSHHandlers()
-    registerRemoteTerminalHandlers()
-    registerFileSystemHandlers()
-    mark('chaterm/main/didRegisterSSH')
     registerUpdater(mainWindow, (value) => (forceQuit = value))
-    setupPluginIpc()
-
-    // Register K8s handlers
-    registerK8sHandlers()
-
-    // Register Database asset handlers
-    registerDbAssetHandlers()
-
-    // Register Database AI (single-turn, track A) handlers
-    registerDbAiHandlers()
-
-    // Register interactive command IPC handlers
-    setupInteractionIpcHandlers()
 
     // Run plugin loading and security config in parallel
     mark('chaterm/main/willLoadPlugins')
@@ -1132,9 +1109,9 @@ function updateNavigationState(): void {
 
 // Setup IPC handlers
 function setupIPC(): void {
-  // KnowledgeBase module (local file-based KB) IPC handlers
-  registerKnowledgeBaseHandlers()
-  registerStageChatAttachmentHandlers()
+  // NOTE: registerKnowledgeBaseHandlers / registerStageChatAttachmentHandlers
+  // moved into `bootstrapChatermMain()` so both standalone and embedded modes
+  // share the same registration path.
 
   ipcMain.handle('init-user-database', async (event, { uid }) => {
     try {
