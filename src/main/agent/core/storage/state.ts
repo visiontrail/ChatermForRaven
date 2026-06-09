@@ -6,6 +6,10 @@
 
 import type { BrowserWindow } from 'electron'
 import type { GlobalStateKey, SecretKey, ApiConfiguration } from './types'
+import { isChatermEmbedded } from '../../../config/embedded'
+import { getRavenLLMClient } from '../../../embedded/raven-llm-client'
+import { DEFAULT_AUTO_APPROVAL_SETTINGS } from '../../shared/AutoApprovalSettings'
+import { DEFAULT_CHAT_SETTINGS } from '../../shared/ChatSettings'
 const logger = createLogger('agent')
 
 export interface ModelOption {
@@ -17,6 +21,37 @@ export interface ModelOption {
 }
 
 let mainWindow: BrowserWindow | null = null
+const embeddedGlobalState = new Map<string, any>([
+  ['autoApprovalSettings', DEFAULT_AUTO_APPROVAL_SETTINGS],
+  ['chatSettings', DEFAULT_CHAT_SETTINGS],
+  ['mcpMarketplaceEnabled', true],
+  ['shellIntegrationTimeout', 4000],
+  ['telemetrySetting', 'unset'],
+  ['userRules', []]
+])
+const embeddedSecrets = new Map<string, string>()
+
+function buildEmbeddedExtensionState(): any {
+  return {
+    apiConfiguration: {
+      apiProvider: 'raven-bridge',
+      defaultModelId: embeddedGlobalState.get('defaultModelId'),
+      ravenLLMClient: getRavenLLMClient() ?? undefined
+    },
+    customInstructions: embeddedGlobalState.get('customInstructions'),
+    userRules: embeddedGlobalState.get('userRules') ?? [],
+    autoApprovalSettings: embeddedGlobalState.get('autoApprovalSettings') ?? DEFAULT_AUTO_APPROVAL_SETTINGS,
+    chatSettings: embeddedGlobalState.get('chatSettings') ?? DEFAULT_CHAT_SETTINGS,
+    userInfo: embeddedGlobalState.get('userInfo'),
+    mcpMarketplaceEnabled: embeddedGlobalState.get('mcpMarketplaceEnabled') ?? true,
+    telemetrySetting: embeddedGlobalState.get('telemetrySetting') ?? 'unset',
+    shellIntegrationTimeout: embeddedGlobalState.get('shellIntegrationTimeout') ?? 4000
+  }
+}
+
+function shouldUseEmbeddedState(): boolean {
+  return isChatermEmbedded() && !mainWindow
+}
 
 export function initializeStorageMain(window: BrowserWindow): void {
   mainWindow = window
@@ -25,6 +60,7 @@ export function initializeStorageMain(window: BrowserWindow): void {
 
 // Main process API function - calls renderer's storage function via executeJavaScript
 export async function getGlobalState(key: GlobalStateKey): Promise<any> {
+  if (shouldUseEmbeddedState()) return embeddedGlobalState.get(key)
   if (!mainWindow) throw new Error('Main window not initialized')
 
   const script = `
@@ -42,6 +78,10 @@ export async function getGlobalState(key: GlobalStateKey): Promise<any> {
 }
 
 export async function updateGlobalState(key: GlobalStateKey, value: any): Promise<void> {
+  if (shouldUseEmbeddedState()) {
+    embeddedGlobalState.set(key, value)
+    return
+  }
   if (!mainWindow) throw new Error('Main window not initialized')
 
   const script = `
@@ -58,6 +98,7 @@ export async function updateGlobalState(key: GlobalStateKey, value: any): Promis
 }
 
 export async function getSecret(key: SecretKey): Promise<string | undefined> {
+  if (shouldUseEmbeddedState()) return embeddedSecrets.get(key)
   if (!mainWindow) throw new Error('Main window not initialized')
 
   const script = `
@@ -74,6 +115,14 @@ export async function getSecret(key: SecretKey): Promise<string | undefined> {
 }
 
 export async function storeSecret(key: SecretKey, value?: string): Promise<void> {
+  if (shouldUseEmbeddedState()) {
+    if (value) {
+      embeddedSecrets.set(key, value)
+    } else {
+      embeddedSecrets.delete(key)
+    }
+    return
+  }
   if (!mainWindow) throw new Error('Main window not initialized')
 
   const script = `
@@ -90,6 +139,7 @@ export async function storeSecret(key: SecretKey, value?: string): Promise<void>
 }
 
 export async function getWorkspaceState(key: string): Promise<any> {
+  if (shouldUseEmbeddedState()) return embeddedGlobalState.get(`workspace:${key}`)
   if (!mainWindow) throw new Error('Main window not initialized')
 
   const script = `
@@ -106,6 +156,10 @@ export async function getWorkspaceState(key: string): Promise<any> {
 }
 
 export async function updateWorkspaceState(key: string, value: any): Promise<void> {
+  if (shouldUseEmbeddedState()) {
+    embeddedGlobalState.set(`workspace:${key}`, value)
+    return
+  }
   if (!mainWindow) throw new Error('Main window not initialized')
 
   const script = `
@@ -122,6 +176,7 @@ export async function updateWorkspaceState(key: string, value: any): Promise<voi
 }
 
 export async function getAllExtensionState(): Promise<any> {
+  if (shouldUseEmbeddedState()) return buildEmbeddedExtensionState()
   if (!mainWindow) throw new Error('Main window not initialized')
 
   const script = `
@@ -138,6 +193,12 @@ export async function getAllExtensionState(): Promise<any> {
 }
 
 export async function updateApiConfiguration(config: ApiConfiguration): Promise<void> {
+  if (shouldUseEmbeddedState()) {
+    for (const [key, value] of Object.entries(config)) {
+      embeddedGlobalState.set(key, value)
+    }
+    return
+  }
   if (!mainWindow) throw new Error('Main window not initialized')
 
   const script = `
@@ -154,6 +215,17 @@ export async function updateApiConfiguration(config: ApiConfiguration): Promise<
 }
 
 export async function resetExtensionState(): Promise<void> {
+  if (shouldUseEmbeddedState()) {
+    embeddedGlobalState.clear()
+    embeddedGlobalState.set('autoApprovalSettings', DEFAULT_AUTO_APPROVAL_SETTINGS)
+    embeddedGlobalState.set('chatSettings', DEFAULT_CHAT_SETTINGS)
+    embeddedGlobalState.set('mcpMarketplaceEnabled', true)
+    embeddedGlobalState.set('shellIntegrationTimeout', 4000)
+    embeddedGlobalState.set('telemetrySetting', 'unset')
+    embeddedGlobalState.set('userRules', [])
+    embeddedSecrets.clear()
+    return
+  }
   if (!mainWindow) throw new Error('Main window not initialized')
 
   const script = `
@@ -171,6 +243,7 @@ export async function resetExtensionState(): Promise<void> {
 
 // Get user information
 export async function getUserId(): Promise<any> {
+  if (shouldUseEmbeddedState()) return 999999999
   if (!mainWindow) throw new Error('Main window not initialized')
 
   const script = `
@@ -188,6 +261,12 @@ export async function getUserId(): Promise<any> {
 
 // Get user config from renderer process
 export async function getUserConfig(): Promise<any> {
+  if (shouldUseEmbeddedState()) {
+    return {
+      language: 'zh-CN',
+      theme: embeddedGlobalState.get('theme') ?? 'system'
+    }
+  }
   if (!mainWindow) throw new Error('Main window not initialized')
 
   const script = `
@@ -210,6 +289,7 @@ export async function getUserConfig(): Promise<any> {
  */
 export async function getModelOptions(excludeThinking = false): Promise<ModelOption[]> {
   try {
+    if (shouldUseEmbeddedState()) return []
     if (!mainWindow) {
       logger.error('Main window not initialized')
       return []
