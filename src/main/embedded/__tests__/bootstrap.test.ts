@@ -103,6 +103,9 @@ vi.mock('../../services/agent/stageChatAttachment', () => ({
 vi.mock('@perf', () => ({
   registerPerfIpcHandlers: SUBSYSTEMS.makeStub(fakeIpc.mock as never, SUBSYSTEMS.channels.registerPerfIpcHandlers)
 }))
+vi.mock('../agent-ipc', () => ({
+  registerEmbeddedAgentIpc: vi.fn(() => [() => undefined])
+}))
 
 // `createLogger` is exposed as an auto-import global by the main-process build;
 // stub it for tests that import bootstrap.ts (which calls it at module load).
@@ -138,7 +141,7 @@ describe('bootstrapChatermMain', () => {
     for (const channel of ALL_EXPECTED_CHANNELS) {
       expect(ipcMainState.handlers.has(channel)).toBe(true)
     }
-    expect(result.disposers).toHaveLength(ALL_EXPECTED_CHANNELS.length)
+    expect(result.disposers).toHaveLength(ipcMainState.handlers.size)
 
     // No validateSender => any sender is permitted.
     const channel = SUBSYSTEM_CHANNELS.registerSSHHandlers
@@ -150,6 +153,7 @@ describe('bootstrapChatermMain', () => {
     const ALLOWED_SENDER = 7
     await bootstrapChatermMain({
       mode: 'embedded',
+      webContentsId: ALLOWED_SENDER,
       validateSender: (event) => event.sender.id === ALLOWED_SENDER
     })
 
@@ -164,22 +168,23 @@ describe('bootstrapChatermMain', () => {
   })
 
   it('(c) re-mounting after a previous mount does not throw on duplicate channel registration', async () => {
-    await bootstrapChatermMain({ mode: 'embedded', validateSender: () => true })
+    await bootstrapChatermMain({ mode: 'embedded', webContentsId: 7, validateSender: () => true })
     // Without idempotent registration the second mount throws "Attempted to register a second handler".
-    await expect(bootstrapChatermMain({ mode: 'embedded', validateSender: () => true })).resolves.toBeDefined()
+    await expect(bootstrapChatermMain({ mode: 'embedded', webContentsId: 7, validateSender: () => true })).resolves.toBeDefined()
     for (const channel of ALL_EXPECTED_CHANNELS) {
       expect(ipcMainState.handlers.has(channel)).toBe(true)
     }
   })
 
   it('(d) running all disposers leaves the ipcMain handler map empty for those channels', async () => {
-    const { disposers } = await bootstrapChatermMain({ mode: 'embedded', validateSender: () => true })
+    const { disposers } = await bootstrapChatermMain({ mode: 'embedded', webContentsId: 7, validateSender: () => true })
     for (let i = disposers.length - 1; i >= 0; i--) {
       await disposers[i]()
     }
     for (const channel of ALL_EXPECTED_CHANNELS) {
       expect(ipcMainState.handlers.has(channel)).toBe(false)
     }
+    expect(ipcMainState.handlers.size).toBe(0)
   })
 })
 

@@ -12,6 +12,7 @@ import { registerRemoteTerminalHandlers } from '../ssh/agentHandle'
 import { registerLocalSSHHandlers } from '../ssh/localSSHHandle'
 import { registerFileSystemHandlers } from '../ssh/sftpTransfer'
 import { registerSSHHandlers } from '../ssh/sshHandle'
+import { registerEmbeddedStorageHandlers } from './storage-ipc'
 
 const logger = createLogger('embedded/bootstrap')
 
@@ -19,6 +20,7 @@ export type BootstrapMode = 'standalone' | 'embedded'
 
 export interface BootstrapOptions {
   mode: BootstrapMode
+  webContentsId?: number
   /**
    * In embedded mode, called with the IpcMainInvokeEvent for every wrapped
    * handler. Must return true to allow the invocation to proceed. When false,
@@ -173,6 +175,7 @@ function registerCommonSubsystems(opts: BootstrapOptions): BootstrapDisposer[] {
     registerKnowledgeBaseHandlers()
     registerStageChatAttachmentHandlers()
     registerPerfIpcHandlers()
+    registerEmbeddedStorageHandlers()
     registerSSHHandlers()
     registerLocalSSHHandlers()
     registerRemoteTerminalHandlers()
@@ -208,6 +211,18 @@ export async function bootstrapChatermMain(opts: BootstrapOptions): Promise<Boot
 
   const disposers: BootstrapDisposer[] = []
   disposers.push(...registerCommonSubsystems(opts))
+  if (opts.mode === 'embedded') {
+    if (typeof opts.webContentsId !== 'number') {
+      throw new Error('webContentsId is required for embedded Chaterm bootstrap')
+    }
+    const { registerEmbeddedAgentIpc } = await import('./agent-ipc')
+    disposers.push(
+      ...registerEmbeddedAgentIpc({
+        webContentsId: opts.webContentsId,
+        validateSender: opts.validateSender
+      })
+    )
+  }
 
   logger.info('bootstrap.done', { mode: opts.mode, disposerCount: disposers.length })
   return { disposers }

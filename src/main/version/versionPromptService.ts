@@ -161,6 +161,11 @@ export class VersionPromptService {
   }
 
   private resolveReleaseNotesPath(): string {
+    const embeddedResourcesPath = process.env.CHATERM_EMBEDDED_RESOURCES_PATH
+    if (process.env.CHATERM_EMBEDDED === '1' && embeddedResourcesPath) {
+      return join(embeddedResourcesPath, 'update-notes.json')
+    }
+
     if (app.isPackaged) {
       return join(process.resourcesPath, 'update-notes.json')
     }

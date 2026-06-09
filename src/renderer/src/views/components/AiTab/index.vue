@@ -74,11 +74,15 @@
             <div class="ai-login-prompt">
               <p>{{ $t('user.noAvailableModelMessage') }}</p>
               <p class="ai-prompt-description">
-                {{ isSkippedLogin ? $t('user.noAvailableModelDescription') : $t('user.noAvailableModelDescriptionLoggedIn') }}
+                {{
+                  isEmbedded || !isSkippedLogin
+                    ? $t('user.noAvailableModelDescriptionLoggedIn')
+                    : $t('user.noAvailableModelDescription')
+                }}
               </p>
               <div class="ai-prompt-buttons">
                 <a-button
-                  v-if="isSkippedLogin"
+                  v-if="isSkippedLogin && !isEmbedded"
                   type="primary"
                   class="login-button"
                   @click="goToLogin"
@@ -887,6 +891,7 @@ import eventBus from '@/utils/eventBus'
 import historyIcon from '@/assets/icons/history.svg'
 import plusIcon from '@/assets/icons/plus.svg'
 import skillsIcon from '@/assets/icons/skills.svg'
+import { isChatermEmbedded } from '@/utils/embedded'
 
 interface TabInfo {
   id: string
@@ -958,6 +963,7 @@ const emit = defineEmits<{
 
 const router = useRouter()
 
+const isEmbedded = isChatermEmbedded()
 const isSkippedLogin = ref(localStorage.getItem('login-skipped') === 'true')
 
 const {

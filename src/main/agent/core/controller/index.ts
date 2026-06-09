@@ -124,13 +124,13 @@ export class Controller {
   private async buildApiConfigurationForModel(base: ApiConfiguration, modelName: string): Promise<ApiConfiguration> {
     if (!modelName?.trim()) return base
     const modelOptions = await getModelOptions(false)
-    const selectedModel = modelOptions.find((m) => m.name === modelName)
+    const selectedModel = modelOptions.find((m) => m.name === modelName || m.id === modelName)
     if (!selectedModel?.apiProvider) return base
     const modelKey = PROVIDER_MODEL_KEY_MAP[selectedModel.apiProvider] || 'defaultModelId'
     return {
       ...base,
       apiProvider: selectedModel.apiProvider as ApiProvider,
-      [modelKey]: selectedModel.name
+      [modelKey]: selectedModel.apiProvider === 'raven-bridge' ? selectedModel.id || selectedModel.name : selectedModel.name
     }
   }
 
@@ -617,15 +617,17 @@ export class Controller {
       if (modelName) {
         // Get model options to find the selected model's provider (exclude thinking models)
         const modelOptions = await getModelOptions(true)
-        const selectedModel = modelOptions.find((m) => m.name === modelName)
+        const selectedModel = modelOptions.find((m) => m.name === modelName || m.id === modelName)
 
         if (selectedModel && selectedModel.apiProvider) {
           const modelKey = PROVIDER_MODEL_KEY_MAP[selectedModel.apiProvider] || 'defaultModelId'
+          const selectedModelId =
+            selectedModel.apiProvider === 'raven-bridge' ? selectedModel.id || selectedModel.name : selectedModel.name
 
           commandApiConfiguration = {
             ...apiConfiguration,
             apiProvider: selectedModel.apiProvider as ApiProvider,
-            [modelKey]: selectedModel.name
+            [modelKey]: selectedModelId
           }
         } else {
           commandApiConfiguration = apiConfiguration

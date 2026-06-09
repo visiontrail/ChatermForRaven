@@ -128,6 +128,8 @@ describe('useChatMessages', () => {
     mockSendToMain.mockResolvedValue({ success: true })
     mockKbCreateFile.mockResolvedValue({ relPath: '2026-01-28_test.md' })
     mockKbWriteFile.mockResolvedValue({ mtimeMs: Date.now() })
+    ;(window as any).ravenEmbedded = undefined
+    ;(window as any).ravenLLM = undefined
   })
 
   afterEach(() => {
@@ -542,6 +544,41 @@ describe('useChatMessages', () => {
       await sendMessageWithContent('Test message', 'send')
 
       expect(mockScrollToBottom).toHaveBeenCalledWith(true)
+    })
+
+    it('should still send through Chaterm main Agent IPC in embedded mode', async () => {
+      ;(window as any).ravenEmbedded = { isEmbedded: true, source: 'raven' }
+      ;(window as any).ravenLLM = {
+        createMessage: vi.fn(),
+        onStream: vi.fn(),
+        abort: vi.fn(),
+        listAvailableModels: vi.fn()
+      }
+
+      const { sendMessageWithContent } = useChatMessages(
+        mockScrollToBottom,
+        mockClearTodoState,
+        mockMarkLatestMessageWithTodoUpdate,
+        mockCurrentTodos,
+        mockCheckModelConfig
+      )
+
+      const mockState = vi.mocked(useSessionState)()
+      const session = mockState.currentSession.value!
+
+      await sendMessageWithContent('Test message', 'send')
+
+      expect(window.ravenLLM?.createMessage).not.toHaveBeenCalled()
+      expect(mockSendToMain).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'newTask',
+          text: 'Test message',
+          taskId: 'test-tab-1',
+          tabId: 'test-tab-1'
+        })
+      )
+      expect(session.chatHistory).toHaveLength(1)
+      expect(session.responseLoading).toBe(true)
     })
   })
 

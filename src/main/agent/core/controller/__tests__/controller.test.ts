@@ -523,6 +523,49 @@ describe('Controller', () => {
       expect(task.setApiProvider).toHaveBeenCalledWith('anthropic')
     })
 
+    it('uses the Raven bridge model id when the selected display name differs', async () => {
+      mockGetModelOptions.mockResolvedValueOnce([
+        { id: 'gpt-5-mini', name: 'GPT-5 Mini', checked: true, type: 'standard', apiProvider: 'raven-bridge' }
+      ])
+
+      const controller = new Controller(
+        async () => true,
+        async () => '/tmp/mcp_settings.json'
+      )
+      await controller.initTask([createMockHost('1')], 'task 1', 'task-1')
+
+      const task = controller.getAllTasks().find((t) => t.taskId === 'task-1')!
+      getMockGetModel(task).mockReturnValue({ id: 'old-model' })
+
+      const baseConfig = { apiProvider: 'default', defaultModelId: 'old-model', defaultBaseUrl: 'http://mock', defaultApiKey: 'mock' }
+      mockGetAllExtensionState.mockResolvedValueOnce({
+        apiConfiguration: baseConfig,
+        userRules: [],
+        autoApprovalSettings: {}
+      })
+
+      const newHandler = {
+        createMessage: vi.fn(),
+        getModel: vi.fn(() => ({ id: 'gpt-5-mini' }))
+      }
+      mockBuildApiHandler.mockReturnValue(newHandler)
+
+      await controller.handleWebviewMessage({
+        type: 'askResponse',
+        taskId: 'task-1',
+        askResponse: 'messageResponse',
+        modelName: 'GPT-5 Mini'
+      } as WebviewMessage)
+
+      expect(mockBuildApiHandler).toHaveBeenCalledWith({
+        ...baseConfig,
+        apiProvider: 'raven-bridge',
+        defaultModelId: 'gpt-5-mini'
+      })
+      expect(task.api).toBe(newHandler)
+      expect(task.setApiProvider).toHaveBeenCalledWith('raven-bridge')
+    })
+
     it('should not update api when modelName is empty or whitespace', async () => {
       const controller = new Controller(
         async () => true,

@@ -9,6 +9,7 @@ import { getUser } from '@api/user/user'
 import { focusChatInput } from './useTabManagement'
 import { useSessionState } from './useSessionState'
 import eventBus from '@/utils/eventBus'
+import { isChatermEmbedded } from '@/utils/embedded'
 
 interface ModelSelectOption {
   label: string
@@ -28,6 +29,12 @@ interface DefaultModel {
   name?: string
   provider?: string
   [key: string]: unknown
+}
+
+interface RavenBridgeModel {
+  providerId: string
+  modelId: string
+  displayName: string
 }
 
 interface EnterpriseModelConfig {
@@ -372,7 +379,20 @@ export const PROVIDER_MODEL_KEY_MAP: Record<string, GlobalStateKey> = {
   deepseek: 'apiModelId',
   openai: 'openAiModelId',
   ollama: 'ollamaModelId',
+  'raven-bridge': 'defaultModelId',
   default: 'defaultModelId'
+}
+
+function getModelOptionValue(model: ModelOption): string {
+  return model.apiProvider === 'raven-bridge' ? model.id || model.name : model.name
+}
+
+function findModelOption(modelOptions: ModelOption[], value: string): ModelOption | undefined {
+  return modelOptions.find((model) => model.name === value || model.id === value)
+}
+
+function getModelOptionRuntimeId(model: ModelOption): string {
+  return model.apiProvider === 'raven-bridge' ? model.id || model.name : model.name
 }
 
 /**
@@ -392,7 +412,7 @@ export const useModelConfiguration = createGlobalState(() => {
 
   const handleChatAiModelChange = async () => {
     const modelOptions = ((await getGlobalState('modelOptions')) as ModelOption[]) || []
-    const selectedModel = modelOptions.find((model) => model.name === chatAiModelValue.value)
+    const selectedModel = findModelOption(modelOptions, chatAiModelValue.value)
 
     if (selectedModel && selectedModel.apiProvider) {
       await updateGlobalState('apiProvider', selectedModel.apiProvider)
@@ -400,7 +420,7 @@ export const useModelConfiguration = createGlobalState(() => {
 
     const apiProvider = selectedModel?.apiProvider
     const key = PROVIDER_MODEL_KEY_MAP[apiProvider || 'default'] || 'defaultModelId'
-    await updateGlobalState(key, chatAiModelValue.value)
+    await updateGlobalState(key, selectedModel ? getModelOptionRuntimeId(selectedModel) : chatAiModelValue.value)
 
     focusChatInput()
   }
@@ -420,7 +440,7 @@ export const useModelConfiguration = createGlobalState(() => {
       })
 
       // Bootstrap full locked list from server when empty (e.g. user opened settings before AI panel)
-      if (allLockedNames.value.length === 0) {
+      if (!isChatermEmbedded() && allLockedNames.value.length === 0) {
         try {
           const res = await getUser({})
           const userData = (res?.data || {}) as UserInfoPayload
@@ -447,20 +467,20 @@ export const useModelConfiguration = createGlobalState(() => {
         .filter((item) => item.checked && !lockedSet.has(item.name))
         .map((item) => ({
           label: item.name,
-          value: item.name
+          value: getModelOptionValue(item)
         }))
 
-      const availableModelNames = AgentAiModelsOptions.value.map((option) => option.value)
+      const availableModelValues = AgentAiModelsOptions.value.map((option) => option.value)
 
       // If no available models, keep existing behavior and bail out
-      if (availableModelNames.length === 0) {
+      if (availableModelValues.length === 0) {
         return
       }
 
       let targetModel: string | undefined
 
       // 1. Prefer current tab model if it is still valid (in available and not locked)
-      if (chatAiModelValue.value && availableModelNames.includes(chatAiModelValue.value)) {
+      if (chatAiModelValue.value && availableModelValues.includes(chatAiModelValue.value)) {
         targetModel = chatAiModelValue.value
       } else {
         // 2. Try to use the model saved for current apiProvider
@@ -468,11 +488,11 @@ export const useModelConfiguration = createGlobalState(() => {
         const key = PROVIDER_MODEL_KEY_MAP[apiProvider || 'default'] || 'defaultModelId'
         const storedModelId = (await getGlobalState(key)) as string
 
-        if (storedModelId && availableModelNames.includes(storedModelId)) {
+        if (storedModelId && availableModelValues.includes(storedModelId)) {
           targetModel = storedModelId
         } else {
           // 3. Fallback: use the first available model
-          targetModel = AgentAiModelsOptions.value[0]?.label
+          targetModel = AgentAiModelsOptions.value[0]?.value
         }
       }
 
@@ -490,6 +510,51 @@ export const useModelConfiguration = createGlobalState(() => {
     }
   }
 
+  const syncRavenBridgeModelOptions = async (): Promise<boolean> => {
+    if (!isChatermEmbedded()) return false
+
+    const ravenLLM = window.ravenLLM
+    if (!ravenLLM?.listAvailableModels) {
+      logger.warn('Raven LLM bridge is unavailable while initializing embedded model options')
+      return false
+    }
+
+    try {
+      const ravenModels = ((await ravenLLM.listAvailableModels()) || []) as RavenBridgeModel[]
+      const savedModelOptions = ((await getGlobalState('modelOptions')) || []) as ModelOption[]
+      const previousById = new Map(savedModelOptions.map((option) => [option.id || option.name, option]))
+
+      const modelOptions = ravenModels
+        .filter((model) => model?.modelId)
+        .map((model) => {
+          const previous = previousById.get(model.modelId)
+          return {
+            id: model.modelId,
+            name: model.displayName || model.modelId,
+            checked: previous ? Boolean(previous.checked) : true,
+            type: 'standard',
+            apiProvider: 'raven-bridge'
+          }
+        })
+
+      allLockedNames.value = []
+      lockedModels.value = []
+      await updateGlobalState('modelOptions', modelOptions)
+      await updateGlobalState('apiProvider', 'raven-bridge')
+
+      const currentDefaultModelId = (await getGlobalState('defaultModelId')) as string
+      if (!currentDefaultModelId || !modelOptions.some((model) => model.id === currentDefaultModelId)) {
+        await updateGlobalState('defaultModelId', modelOptions[0]?.id || '')
+      }
+
+      logger.info('Synced Raven bridge model options', { count: modelOptions.length })
+      return true
+    } catch (error) {
+      logger.error('Failed to sync Raven bridge model options', { error })
+      return false
+    }
+  }
+
   const checkModelConfig = async (): Promise<{ success: boolean; message?: string; description?: string }> => {
     // Check if there are any available models
     const modelOptions = (await getGlobalState('modelOptions')) as ModelOption[]
@@ -499,7 +564,7 @@ export const useModelConfiguration = createGlobalState(() => {
       return {
         success: false,
         message: 'user.noAvailableModelMessage',
-        description: 'user.noAvailableModelDescription'
+        description: isChatermEmbedded() ? 'user.noAvailableModelDescriptionLoggedIn' : 'user.noAvailableModelDescription'
       }
     }
 
@@ -572,6 +637,18 @@ export const useModelConfiguration = createGlobalState(() => {
   const initModelOptions = async () => {
     try {
       modelsLoading.value = true
+
+      if (isChatermEmbedded()) {
+        const synced = await syncRavenBridgeModelOptions()
+        if (synced) {
+          await initModel()
+        } else {
+          AgentAiModelsOptions.value = []
+          modelsLoading.value = false
+        }
+        return
+      }
+
       const isSkippedLogin = localStorage.getItem('login-skipped') === 'true'
       const initialSavedModelOptions = ((await getGlobalState('modelOptions')) || []) as ModelOption[]
       logger.info('savedModelOptions', { data: initialSavedModelOptions })
@@ -641,6 +718,14 @@ export const useModelConfiguration = createGlobalState(() => {
   }
 
   const refreshModelOptions = async (): Promise<void> => {
+    if (isChatermEmbedded()) {
+      const synced = await syncRavenBridgeModelOptions()
+      if (synced) {
+        await initModel()
+      }
+      return
+    }
+
     const isSkippedLogin = localStorage.getItem('login-skipped') === 'true'
     if (isSkippedLogin) return
 

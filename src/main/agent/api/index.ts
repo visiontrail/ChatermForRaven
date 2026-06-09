@@ -6,7 +6,7 @@
 
 import { Anthropic } from '@anthropic-ai/sdk'
 import { isChatermEmbedded } from '../../config/embedded'
-import { getRavenLLMClient } from '../../embedded'
+import { getRavenLLMClient } from '../../embedded/raven-llm-client'
 import { ApiConfiguration, ModelInfo, liteLlmModelInfoSaneDefaults } from '../shared/api'
 import { AwsBedrockHandler } from './providers/bedrock'
 import { LiteLlmHandler } from './providers/litellm'

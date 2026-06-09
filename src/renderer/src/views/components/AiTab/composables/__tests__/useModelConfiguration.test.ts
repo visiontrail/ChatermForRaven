@@ -3,6 +3,7 @@ import { syncEnterpriseStateFromUserData, useModelConfiguration } from '../useMo
 import * as stateModule from '@renderer/agent/storage/state'
 import { getUser } from '@api/user/user'
 import { ref } from 'vue'
+import { isChatermEmbedded } from '@/utils/embedded'
 
 // Create a shared mock ref that can be updated in tests
 const mockChatAiModelValue = ref('')
@@ -17,6 +18,10 @@ vi.mock('@renderer/agent/storage/state', () => ({
 
 vi.mock('@api/user/user', () => ({
   getUser: vi.fn()
+}))
+
+vi.mock('@/utils/embedded', () => ({
+  isChatermEmbedded: vi.fn(() => false)
 }))
 
 vi.mock('../useTabManagement', () => ({
@@ -45,6 +50,8 @@ describe('useModelConfiguration', () => {
     ;(global.window as unknown as { api?: { reloadPlugins?: ReturnType<typeof vi.fn> } }).api = {
       reloadPlugins: vi.fn().mockResolvedValue(undefined)
     }
+    vi.mocked(isChatermEmbedded).mockReturnValue(false)
+    delete (global.window as unknown as { ravenLLM?: unknown }).ravenLLM
   })
 
   afterEach(() => {
@@ -274,6 +281,50 @@ describe('useModelConfiguration', () => {
       expect(modelOptionsIdx).toBeLessThan(modelInfoIdx)
 
       global.fetch = originalFetch
+    })
+
+    it('syncs Raven bridge models in embedded mode', async () => {
+      vi.mocked(isChatermEmbedded).mockReturnValue(true)
+
+      const state: Record<string, unknown> = {
+        modelOptions: [],
+        defaultModelId: ''
+      }
+
+      ;(global.window as unknown as {
+        ravenLLM?: { listAvailableModels: ReturnType<typeof vi.fn> }
+      }).ravenLLM = {
+        listAvailableModels: vi.fn().mockResolvedValue([
+          {
+            providerId: 'openai',
+            modelId: 'gpt-5-mini',
+            displayName: 'GPT-5 Mini',
+            capabilities: { tools: true, vision: false, streaming: true }
+          }
+        ])
+      }
+
+      vi.mocked(stateModule.getGlobalState).mockImplementation(async (key) => state[key] ?? null)
+      vi.mocked(stateModule.updateGlobalState).mockImplementation(async (key, value) => {
+        state[key] = value
+      })
+
+      const { initModelOptions, AgentAiModelsOptions } = useModelConfiguration()
+      await initModelOptions()
+
+      expect(getUser).not.toHaveBeenCalled()
+      expect(stateModule.updateGlobalState).toHaveBeenCalledWith('modelOptions', [
+        {
+          id: 'gpt-5-mini',
+          name: 'GPT-5 Mini',
+          checked: true,
+          type: 'standard',
+          apiProvider: 'raven-bridge'
+        }
+      ])
+      expect(stateModule.updateGlobalState).toHaveBeenCalledWith('apiProvider', 'raven-bridge')
+      expect(stateModule.updateGlobalState).toHaveBeenCalledWith('defaultModelId', 'gpt-5-mini')
+      expect(AgentAiModelsOptions.value).toEqual([{ label: 'GPT-5 Mini', value: 'gpt-5-mini' }])
     })
   })
 

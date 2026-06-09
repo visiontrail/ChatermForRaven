@@ -2,7 +2,10 @@
  * Safe JSON serialization utility
  * Uses superjson to handle special types: Date, undefined, NaN, Infinity, circular references, RegExp, Set, Map, BigInt, etc.
  */
+import { createRequire } from 'node:module'
+
 const logger = createLogger('storage')
+const dynamicRequire = createRequire(__filename)
 
 interface SerializationOptions {
   /** Whether strict mode (throws error when encountering non-serializable values) */
@@ -20,8 +23,10 @@ let superjsonInstance: any = null
 
 async function getSuperjson() {
   if (!superjsonInstance) {
-    // Dynamically import ESM module
-    const module = await import('superjson')
+    // Dynamically import ESM module. Embedded Raven loads Chaterm from
+    // resources/chaterm/main, where ESM resolution cannot see Chaterm's
+    // node_modules via NODE_PATH, so fall back to CJS require.
+    const module = await import('superjson').catch(() => dynamicRequire('superjson'))
     superjsonInstance = module.default || module
   }
   return superjsonInstance

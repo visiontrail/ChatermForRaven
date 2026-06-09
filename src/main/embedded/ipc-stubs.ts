@@ -29,14 +29,31 @@ export function registerEmbeddedIpcStubs(): IpcDispose[] {
     {
       channel: 'get-protocol-prefix',
       handler: async () => 'raven-chaterm://'
+    },
+    {
+      channel: 'chat-sync:set-ai-tab-visible',
+      handler: async () => ({ success: true, skipped: true, reason: 'embedded' as const })
+    },
+    {
+      channel: 'update-theme',
+      handler: async () => true
     }
   ]
 
+  const registeredChannels: string[] = []
   for (const { channel, handler } of channels) {
-    ipcMain.handle(channel, handler)
+    try {
+      ipcMain.handle(channel, handler)
+      registeredChannels.push(channel)
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('second handler')) {
+        continue
+      }
+      throw err
+    }
   }
 
-  return channels.map(({ channel }) => () => {
+  return registeredChannels.map((channel) => () => {
     ipcMain.removeHandler(channel)
   })
 }

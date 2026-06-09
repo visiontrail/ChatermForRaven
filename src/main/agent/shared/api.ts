@@ -65,7 +65,8 @@ export const PROVIDER_MODEL_KEY_MAP: Record<string, string> = {
   openai: 'openAiModelId',
   deepseek: 'apiModelId',
   bedrock: 'apiModelId',
-  ollama: 'ollamaModelId'
+  ollama: 'ollamaModelId',
+  'raven-bridge': 'defaultModelId'
 }
 
 // Models

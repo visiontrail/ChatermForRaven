@@ -87,6 +87,11 @@ function migrateLegacyDatabase(userId: number, dbType: 'complete' | 'chaterm'): 
 }
 
 function getInitChatermDbPath(): string {
+  const embeddedResourcesPath = process.env.CHATERM_EMBEDDED_RESOURCES_PATH
+  if (process.env.CHATERM_EMBEDDED === '1' && embeddedResourcesPath) {
+    return join(embeddedResourcesPath, 'db', 'init_chaterm.db')
+  }
+
   try {
     const { app } = require('electron')
     if (app.isPackaged) {
@@ -101,6 +106,11 @@ function getInitChatermDbPath(): string {
 }
 
 function getInitDbPath(): string {
+  const embeddedResourcesPath = process.env.CHATERM_EMBEDDED_RESOURCES_PATH
+  if (process.env.CHATERM_EMBEDDED === '1' && embeddedResourcesPath) {
+    return join(embeddedResourcesPath, 'db', 'init_data.db')
+  }
+
   try {
     const { app } = require('electron')
     if (app.isPackaged) {

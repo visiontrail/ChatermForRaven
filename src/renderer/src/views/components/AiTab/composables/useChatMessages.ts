@@ -660,7 +660,9 @@ export function useChatMessages(
         if (
           (partial.type === 'ask' &&
             (partial.ask === 'command' || partial.ask === 'db_sql_approval' || partial.ask === 'mcp_tool_call' || partial.ask === 'followup')) ||
-          partial.say === 'command_blocked'
+          partial.say === 'command_blocked' ||
+          partial.say === 'text' ||
+          partial.say === 'completion_result'
         ) {
           session.responseLoading = false
         }

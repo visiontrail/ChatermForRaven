@@ -3,6 +3,7 @@ import { webContents } from 'electron'
 import type { RavenLLMClient } from './agent/api/raven-bridge/types'
 import { bootstrapChatermMain, type BootstrapDisposer, type BootstrapResult } from './embedded/bootstrap'
 import { registerEmbeddedIpcStubs } from './embedded/ipc-stubs'
+import { setRavenLLMClient as setEmbeddedRavenLLMClient } from './embedded/raven-llm-client'
 import { setMainWindowWebContents } from './storage/db/connection'
 
 const logger = createLogger('embedded')
@@ -33,17 +34,9 @@ interface MountState {
 }
 
 let mountState: MountState | null = null
-let ravenLLMClient: RavenLLMClient | null = null
 
 export { isChatermEmbedded } from './config/embedded'
-
-export function setRavenLLMClient(client: RavenLLMClient | null): void {
-  ravenLLMClient = client
-}
-
-export function getRavenLLMClient(): RavenLLMClient | null {
-  return ravenLLMClient
-}
+export { getRavenLLMClient, setRavenLLMClient } from './embedded/raven-llm-client'
 
 export function isChatermMounted(): boolean {
   return mountState !== null
@@ -78,20 +71,21 @@ export async function mountChaterm(options: MountChatermOptions): Promise<void> 
   }
 
   if (options.llmClient) {
-    setRavenLLMClient(options.llmClient)
+    setEmbeddedRavenLLMClient(options.llmClient)
   }
 
   let bootstrapResult: BootstrapResult
   try {
     bootstrapResult = await bootstrapChatermMain({
       mode: 'embedded',
+      webContentsId: options.webContentsId,
       validateSender: (event) => event.sender.id === options.webContentsId
     })
   } catch (error) {
     // Roll back the partial mount state if bootstrap fails.
     disposeIpcStubs()
     setMainWindowWebContents(null)
-    setRavenLLMClient(null)
+    setEmbeddedRavenLLMClient(null)
     throw error
   }
 
@@ -138,7 +132,7 @@ export async function unmountChaterm(): Promise<void> {
   }
 
   setMainWindowWebContents(null)
-  setRavenLLMClient(null)
+  setEmbeddedRavenLLMClient(null)
 
   try {
     await signals?.onUnmount?.()
