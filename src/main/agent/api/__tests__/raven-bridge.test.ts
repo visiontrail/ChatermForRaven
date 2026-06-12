@@ -81,6 +81,31 @@ describe('RavenBridgeHandler', () => {
     expect(handler.getModel().id).toBe('claude-3-5-sonnet')
   })
 
+  it('maps reasoning events to ApiStream reasoning chunks and treats them as model activity', async () => {
+    const previousTimeout = process.env.CHATERM_RAVEN_BRIDGE_FIRST_EVENT_TIMEOUT_MS
+    process.env.CHATERM_RAVEN_BRIDGE_FIRST_EVENT_TIMEOUT_MS = '50'
+    const client = createMockClient([
+      { type: 'start', modelId: 'glm-4.6', createdAt: Date.now() },
+      { type: 'reasoning', delta: 'thinking…' },
+      { type: 'text', delta: 'answer' },
+      { type: 'end', finishReason: 'stop' }
+    ])
+    const handler = new RavenBridgeHandler(client)
+
+    try {
+      const chunks = await collectStream(handler)
+      expect(chunks).toContainEqual({ type: 'reasoning', reasoning: 'thinking…' })
+      expect(chunks).toContainEqual({ type: 'text', text: 'answer' })
+      expect(client.abort).not.toHaveBeenCalled()
+    } finally {
+      if (previousTimeout === undefined) {
+        delete process.env.CHATERM_RAVEN_BRIDGE_FIRST_EVENT_TIMEOUT_MS
+      } else {
+        process.env.CHATERM_RAVEN_BRIDGE_FIRST_EVENT_TIMEOUT_MS = previousTimeout
+      }
+    }
+  })
+
   it('maps tool_use events into Chaterm XML text chunks', async () => {
     const client = createMockClient([
       { type: 'tool_use_start', toolCallId: 'tool-1', name: 'execute_command' },

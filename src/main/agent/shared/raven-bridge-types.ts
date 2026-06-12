@@ -7,6 +7,7 @@ export type FinishReason = 'stop' | 'length' | 'tool_use' | 'abort' | 'error'
 export type BridgeStreamEvent =
   | { type: 'start'; modelId: string; createdAt: number }
   | { type: 'text'; delta: string }
+  | { type: 'reasoning'; delta: string }
   | { type: 'tool_use_start'; toolCallId: string; name: string; partialInput?: string }
   | { type: 'tool_use_delta'; toolCallId: string; inputJsonDelta: string }
   | { type: 'tool_use_end'; toolCallId: string; finalInput: unknown }

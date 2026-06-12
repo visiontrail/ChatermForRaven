@@ -20,7 +20,10 @@ interface ToolCallState {
   opened: boolean
 }
 
-const DEFAULT_FIRST_MODEL_EVENT_TIMEOUT_MS = 60_000
+// Generous default: agent-sized prompts on reasoning models can take minutes
+// before the backend emits its first token. Override via
+// CHATERM_RAVEN_BRIDGE_FIRST_EVENT_TIMEOUT_MS.
+const DEFAULT_FIRST_MODEL_EVENT_TIMEOUT_MS = 180_000
 
 function getFirstModelEventTimeoutMs(): number {
   const raw = process.env.CHATERM_RAVEN_BRIDGE_FIRST_EVENT_TIMEOUT_MS
@@ -69,7 +72,12 @@ function waitForQueue<T>(queue: T[], wake: { current?: () => void }, timeoutMs?:
     if (timeoutMs !== undefined) {
       timer = setTimeout(() => {
         wake.current = undefined
-        reject(new Error(`Timed out waiting for Raven LLM bridge model event after ${timeoutMs}ms`))
+        reject(
+          new Error(
+            `Timed out waiting for Raven LLM bridge model event after ${timeoutMs}ms — ` +
+              'the model backend returned no data (it may be overloaded or unreachable); the SSH connection is not involved'
+          )
+        )
       }, timeoutMs)
     }
 
@@ -132,6 +140,11 @@ export class RavenBridgeHandler implements ApiHandler {
           case 'text':
             sawModelEvent = true
             yield { type: 'text', text: event.delta }
+            break
+
+          case 'reasoning':
+            sawModelEvent = true
+            yield { type: 'reasoning', reasoning: event.delta }
             break
 
           case 'usage': {
