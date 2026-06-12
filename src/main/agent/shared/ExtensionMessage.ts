@@ -19,6 +19,8 @@ export interface ExtensionMessage {
     | 'taskFavoriteUpdated'
     | 'taskDeleted'
     | 'mcpServersUpdate'
+    | 'mcpServerUpdate'
+    | 'mcpConfigFileChanged'
     | 'notification'
 
   text?: string
@@ -42,6 +44,8 @@ export interface ExtensionMessage {
   favorite?: boolean
   // For MCP servers update
   mcpServers?: any[]
+  mcpServer?: unknown
+  content?: string
   // For notifications
   notification?: {
     type: 'info' | 'success' | 'warning' | 'error'

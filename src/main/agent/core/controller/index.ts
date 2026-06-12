@@ -299,8 +299,17 @@ export class Controller {
           taskId: (message as ExtensionMessage & { taskId?: string }).taskId ?? taskId
         }
       : message
-    const safeMessage = removeSensitiveKeys(payload)
-    await this.postMessage(safeMessage)
+    const safeMessage = sanitizeForWebview(payload)
+    try {
+      await this.postMessage(safeMessage)
+    } catch (error) {
+      logger.error('Failed to post message to embedded webview', {
+        error,
+        messageType: message.type,
+        taskId
+      })
+      throw error
+    }
   }
 
   /**
@@ -546,7 +555,7 @@ export class Controller {
       isNewUser: true
     }
 
-    this.postMessageToWebview({ type: 'state', state }, taskId)
+    await this.postMessageToWebview({ type: 'state', state }, taskId)
   }
 
   async clearTask(tabId?: string) {
@@ -621,8 +630,7 @@ export class Controller {
 
         if (selectedModel && selectedModel.apiProvider) {
           const modelKey = PROVIDER_MODEL_KEY_MAP[selectedModel.apiProvider] || 'defaultModelId'
-          const selectedModelId =
-            selectedModel.apiProvider === 'raven-bridge' ? selectedModel.id || selectedModel.name : selectedModel.name
+          const selectedModelId = selectedModel.apiProvider === 'raven-bridge' ? selectedModel.id || selectedModel.name : selectedModel.name
 
           commandApiConfiguration = {
             ...apiConfiguration,
@@ -1185,27 +1193,63 @@ Now, convert the following instruction to a command:`
   }
 }
 
-function removeSensitiveKeys(obj: any): any {
-  if (Array.isArray(obj)) {
-    return obj.map(removeSensitiveKeys)
-  } else if (obj && typeof obj === 'object') {
-    const newObj: any = {}
-    for (const key of Object.keys(obj)) {
-      if (
-        key.toLowerCase().includes('accesskey') ||
-        key.toLowerCase().includes('secretkey') ||
-        key.toLowerCase().includes('apikey') ||
-        key.toLowerCase().includes('endpoint') ||
-        key.toLowerCase().includes('awsprofile')
-      ) {
-        newObj[key] = undefined // or '***'
-      } else {
-        newObj[key] = removeSensitiveKeys(obj[key])
-      }
+function isSensitiveKey(key: string): boolean {
+  const normalized = key.toLowerCase()
+  return (
+    normalized.includes('accesskey') ||
+    normalized.includes('secretkey') ||
+    normalized.includes('apikey') ||
+    normalized.includes('endpoint') ||
+    normalized.includes('awsprofile')
+  )
+}
+
+function sanitizeForWebview(value: any, seen = new WeakSet<object>()): any {
+  if (value === null || value === undefined) return value
+
+  const valueType = typeof value
+  if (valueType === 'string' || valueType === 'number' || valueType === 'boolean') return value
+  if (valueType === 'bigint') return value.toString()
+  if (valueType === 'function' || valueType === 'symbol') return undefined
+
+  if (value instanceof Date) return value.toISOString()
+  if (value instanceof Error) {
+    return {
+      name: value.name,
+      message: value.message,
+      stack: value.stack
     }
-    return newObj
   }
-  return obj
+
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeForWebview(item, seen))
+  }
+
+  if (value instanceof Map) {
+    return Object.fromEntries(Array.from(value.entries()).map(([key, item]) => [String(key), sanitizeForWebview(item, seen)]))
+  }
+
+  if (value instanceof Set) {
+    return Array.from(value.values()).map((item) => sanitizeForWebview(item, seen))
+  }
+
+  if (typeof Buffer !== 'undefined' && Buffer.isBuffer(value)) {
+    return value.toString('base64')
+  }
+
+  if (typeof value === 'object') {
+    if (seen.has(value)) return '[Circular]'
+    seen.add(value)
+
+    const sanitized: Record<string, any> = {}
+    for (const key of Object.keys(value)) {
+      sanitized[key] = isSensitiveKey(key) ? undefined : sanitizeForWebview(value[key], seen)
+    }
+    seen.delete(value)
+    return sanitized
+  }
+
+  return undefined
 }
 
 async function updateTaskHosts(taskId: string, hosts: Host[]) {

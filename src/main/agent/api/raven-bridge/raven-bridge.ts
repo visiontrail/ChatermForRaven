@@ -20,6 +20,16 @@ interface ToolCallState {
   opened: boolean
 }
 
+const DEFAULT_FIRST_MODEL_EVENT_TIMEOUT_MS = 60_000
+
+function getFirstModelEventTimeoutMs(): number {
+  const raw = process.env.CHATERM_RAVEN_BRIDGE_FIRST_EVENT_TIMEOUT_MS
+  if (!raw) return DEFAULT_FIRST_MODEL_EVENT_TIMEOUT_MS
+
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_FIRST_MODEL_EVENT_TIMEOUT_MS
+}
+
 function toBridgeMessages(messages: Anthropic.Messages.MessageParam[]): BridgeMessage[] {
   return messages.map((message) => ({
     role: message.role as BridgeMessage['role'],
@@ -49,13 +59,24 @@ function parseToolInput(state: ToolCallState, finalInput: unknown): Record<strin
   return {}
 }
 
-function waitForQueue<T>(queue: T[], wake: { current?: () => void }): Promise<void> {
+function waitForQueue<T>(queue: T[], wake: { current?: () => void }, timeoutMs?: number): Promise<void> {
   if (queue.length > 0) {
     return Promise.resolve()
   }
 
-  return new Promise((resolve) => {
-    wake.current = resolve
+  return new Promise((resolve, reject) => {
+    let timer: NodeJS.Timeout | undefined
+    if (timeoutMs !== undefined) {
+      timer = setTimeout(() => {
+        wake.current = undefined
+        reject(new Error(`Timed out waiting for Raven LLM bridge model event after ${timeoutMs}ms`))
+      }, timeoutMs)
+    }
+
+    wake.current = () => {
+      if (timer) clearTimeout(timer)
+      resolve()
+    }
   })
 }
 
@@ -77,6 +98,8 @@ export class RavenBridgeHandler implements ApiHandler {
     const toolCalls = new Map<string, ToolCallState>()
     let streamEnded = false
     let sawTerminalEnd = false
+    let sawModelEvent = false
+    const firstModelEventTimeoutMs = getFirstModelEventTimeoutMs()
 
     const unsubscribe = this.client.onStreamEvent(requestId, (event) => {
       queue.push(event)
@@ -95,7 +118,7 @@ export class RavenBridgeHandler implements ApiHandler {
       await this.client.createMessage(request)
 
       while (!streamEnded) {
-        await waitForQueue(queue, wake)
+        await waitForQueue(queue, wake, sawModelEvent ? undefined : firstModelEventTimeoutMs)
         const event = queue.shift()
         if (!event) {
           continue
@@ -107,10 +130,12 @@ export class RavenBridgeHandler implements ApiHandler {
             break
 
           case 'text':
+            sawModelEvent = true
             yield { type: 'text', text: event.delta }
             break
 
           case 'usage': {
+            sawModelEvent = true
             const usageChunk: ApiStreamUsageChunk = {
               type: 'usage',
               inputTokens: event.inputTokens,
@@ -124,6 +149,7 @@ export class RavenBridgeHandler implements ApiHandler {
           }
 
           case 'tool_use_start': {
+            sawModelEvent = true
             const state: ToolCallState = {
               name: event.name,
               jsonParts: event.partialInput ? [event.partialInput] : [],
@@ -136,6 +162,7 @@ export class RavenBridgeHandler implements ApiHandler {
           }
 
           case 'tool_use_delta': {
+            sawModelEvent = true
             const state = toolCalls.get(event.toolCallId)
             if (state) {
               state.jsonParts.push(event.inputJsonDelta)
@@ -144,6 +171,7 @@ export class RavenBridgeHandler implements ApiHandler {
           }
 
           case 'tool_use_end': {
+            sawModelEvent = true
             const state = toolCalls.get(event.toolCallId)
             if (state) {
               const input = parseToolInput(state, event.finalInput)
@@ -156,6 +184,7 @@ export class RavenBridgeHandler implements ApiHandler {
           }
 
           case 'end':
+            sawModelEvent = true
             streamEnded = true
             sawTerminalEnd = true
             if (event.finishReason === 'error') {
@@ -167,6 +196,7 @@ export class RavenBridgeHandler implements ApiHandler {
     } finally {
       unsubscribe()
       if (!sawTerminalEnd) {
+        logger.warn('Raven LLM bridge stream ended without terminal event; aborting request', { requestId })
         void this.client.abort(requestId).catch((error) => {
           logger.warn('Failed to abort Raven LLM bridge request', { requestId, error })
         })

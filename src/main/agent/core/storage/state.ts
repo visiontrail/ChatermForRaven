@@ -7,7 +7,6 @@
 import type { BrowserWindow } from 'electron'
 import type { GlobalStateKey, SecretKey, ApiConfiguration } from './types'
 import { isChatermEmbedded } from '../../../config/embedded'
-import { getRavenLLMClient } from '../../../embedded/raven-llm-client'
 import { DEFAULT_AUTO_APPROVAL_SETTINGS } from '../../shared/AutoApprovalSettings'
 import { DEFAULT_CHAT_SETTINGS } from '../../shared/ChatSettings'
 const logger = createLogger('agent')
@@ -35,8 +34,7 @@ function buildEmbeddedExtensionState(): any {
   return {
     apiConfiguration: {
       apiProvider: 'raven-bridge',
-      defaultModelId: embeddedGlobalState.get('defaultModelId'),
-      ravenLLMClient: getRavenLLMClient() ?? undefined
+      defaultModelId: embeddedGlobalState.get('defaultModelId')
     },
     customInstructions: embeddedGlobalState.get('customInstructions'),
     userRules: embeddedGlobalState.get('userRules') ?? [],

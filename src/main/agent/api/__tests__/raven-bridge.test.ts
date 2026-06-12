@@ -123,6 +123,24 @@ describe('RavenBridgeHandler', () => {
 
     await expect(collectStream(handler)).resolves.toBeDefined()
   })
+
+  it('aborts when the bridge never receives a model event after start', async () => {
+    const previousTimeout = process.env.CHATERM_RAVEN_BRIDGE_FIRST_EVENT_TIMEOUT_MS
+    process.env.CHATERM_RAVEN_BRIDGE_FIRST_EVENT_TIMEOUT_MS = '5'
+    const client = createMockClient([{ type: 'start', modelId: 'claude-3-5-sonnet', createdAt: Date.now() }])
+    const handler = new RavenBridgeHandler(client)
+
+    try {
+      await expect(collectStream(handler)).rejects.toThrow(/Timed out waiting for Raven LLM bridge model event/)
+      expect(client.abort).toHaveBeenCalledTimes(1)
+    } finally {
+      if (previousTimeout === undefined) {
+        delete process.env.CHATERM_RAVEN_BRIDGE_FIRST_EVENT_TIMEOUT_MS
+      } else {
+        process.env.CHATERM_RAVEN_BRIDGE_FIRST_EVENT_TIMEOUT_MS = previousTimeout
+      }
+    }
+  })
 })
 
 describe('buildApiHandler raven-bridge', () => {
