@@ -19,6 +19,11 @@ import { APP_EDITION } from './utils/edition'
 import { isChatermEmbedded } from './utils/embedded'
 import { createRendererLogger } from './utils/logger'
 import { useEditorConfigStore } from './store/editorConfig'
+import { getSystemTheme } from './utils/themeUtils'
+import { resolveThemePreset } from '@common/themes/resolve'
+import { applyThemeToDocument } from './themes/applyTheme'
+import eventBus from './utils/eventBus'
+import type { ThemeId } from '@common/themes/types'
 
 // Set document title based on edition
 document.title = APP_EDITION === 'cn' ? 'Chaterm CN' : 'Chaterm'
@@ -48,8 +53,12 @@ interface RavenSessionPayload {
   isGuest: boolean
   name: string
 }
+interface RavenThemePayload {
+  theme: string
+}
 interface RavenUIShim {
   onSession?: (listener: (payload: RavenSessionPayload) => void) => () => void
+  onThemeChanged?: (listener: (payload: RavenThemePayload) => void) => () => void
 }
 declare global {
   interface Window {
@@ -124,6 +133,21 @@ mark('chaterm/renderer/didMountApp')
 
 // Initialize editor config after app is mounted
 initializeEditorConfig()
+
+// Subscribe to Raven theme changes when embedded. Placed after app.mount()
+// so Vue component eventBus listeners (e.g. xterm theme sync) are registered.
+if (isChatermEmbedded()) {
+  const ravenUIForTheme = (window as unknown as { ravenUI?: RavenUIShim }).ravenUI
+  if (ravenUIForTheme?.onThemeChanged) {
+    ravenUIForTheme.onThemeChanged((payload) => {
+      const themeId = payload.theme as ThemeId
+      const system = getSystemTheme() as 'dark' | 'light'
+      const preset = resolveThemePreset(themeId, system)
+      applyThemeToDocument(preset)
+      eventBus.emit('updateTheme', { themeId, appearance: preset.appearance, preset })
+    })
+  }
+}
 
 if (import.meta.hot) {
   import.meta.hot.on('vite:afterUpdate', () => {
