@@ -360,6 +360,14 @@ export function useChatMessages(
       return
     }
 
+    // Visible Agent terminal execution returns its structured result to the
+    // Task without duplicating the command output in the right-hand chat.
+    if (sendType === 'commandSend' && toolResult?.suppressChatMessage) {
+      session.responseLoading = true
+      session.showRetryButton = false
+      return
+    }
+
     const userMessage: ChatMessage = {
       id: uuidv4(),
       role: 'user',
@@ -392,6 +400,60 @@ export function useChatMessages(
     }
 
     return
+  }
+
+  const dispatchVisibleAgentCommand = (targetTab: ChatTab, payloadText?: string) => {
+    const session = targetTab.session
+    let command = ''
+    let targetHost = ''
+
+    try {
+      const payload = JSON.parse(payloadText || '{}') as { command?: unknown; ip?: unknown }
+      command = typeof payload.command === 'string' ? payload.command : ''
+      targetHost = typeof payload.ip === 'string' ? payload.ip : ''
+    } catch (error) {
+      logger.error('Invalid visible terminal execution payload', { error })
+    }
+
+    const returnDispatchError = (error: string) => {
+      void sendMessageWithContent('', 'commandSend', targetTab.id, undefined, undefined, undefined, {
+        output: error,
+        toolName: 'execute_command',
+        isError: true,
+        suppressChatMessage: true
+      }).catch((sendError) => {
+        logger.error('Failed to return visible terminal dispatch error', { error: sendError })
+      })
+    }
+
+    if (!command.trim()) {
+      returnDispatchError('Visible terminal execution failed: command is empty')
+      return
+    }
+
+    let dispatchReported = false
+    eventBus.emit('executeTerminalCommand', {
+      command: command.endsWith('\n') ? command : `${command}\n`,
+      tabId: targetTab.id,
+      targetHost,
+      suppressChatMessage: true,
+      onDispatch: ({ accepted, error }) => {
+        if (dispatchReported) return
+        dispatchReported = true
+        if (!accepted) {
+          returnDispatchError(error || 'Visible terminal execution failed: no matching active terminal')
+        }
+      }
+    })
+
+    if (!dispatchReported) {
+      returnDispatchError('Visible terminal execution failed: no active terminal accepted the command')
+      return
+    }
+
+    session.isExecutingCommand = true
+    session.responseLoading = true
+    session.showSendButton = false
   }
 
   const handleModelApiReqFailed = (message: any, targetTab: ChatTab) => {
@@ -535,6 +597,15 @@ export function useChatMessages(
     if (message?.type === 'partialMessage') {
       const partial = message.partialMessage
       if (!partial) {
+        return
+      }
+
+      // `command_execution` is an internal control message. It drives the
+      // human-visible xterm and deliberately never enters right-side history.
+      if (partial.type === 'ask' && partial.ask === 'command_execution') {
+        dispatchVisibleAgentCommand(targetTab, partial.text)
+        session.lastPartialMessage = message
+        session.lastStreamMessage = message
         return
       }
 

@@ -115,6 +115,7 @@ import { connectAssetInfo } from '../../../storage/database'
 import { findWakeupConnectionInfoByHost } from '../../../ssh/agentHandle'
 import { getMessages, formatMessage, Messages } from './messages'
 import { decodeHtmlEntities } from '@utils/decodeHtmlEntities'
+import { isChatermEmbedded } from '../../../config/embedded'
 import { McpHub } from '@services/mcp/McpHub'
 import { SkillsManager } from '@services/skills'
 import { ChatermDatabaseService } from '../../../storage/db/chaterm.service'
@@ -3005,6 +3006,7 @@ export class Task {
         this.consecutiveMistakeCount = 0
         let didAutoApprove = false
         const chatSettings = await getGlobalState('chatSettings')
+        const useVisibleTerminalExecution = isChatermEmbedded() && chatSettings?.mode === 'agent'
 
         if (chatSettings?.mode === 'cmd' || needsSecurityApproval) {
           // If security confirmation needed, show security warning first
@@ -3041,7 +3043,9 @@ export class Task {
         ) {
           // In auto-approval mode, commands without security risks execute directly
           this.removeLastPartialMessageIfExistsWithType('ask', 'command')
-          await this.say('command', command, false)
+          if (!useVisibleTerminalExecution) {
+            await this.say('command', command, false)
+          }
           this.consecutiveAutoApprovedRequestsCount++
           didAutoApprove = true
         } else if (!needsSecurityApproval) {
@@ -3055,7 +3059,9 @@ export class Task {
             const reason = globalAutoExecuteReadOnly ? 'global setting' : 'session auto-approval'
             logger.info(`[Command Execution] Auto-approving read-only command (${reason} enabled)`)
             this.removeLastPartialMessageIfExistsWithType('ask', 'command')
-            await this.say('command', command, false)
+            if (!useVisibleTerminalExecution) {
+              await this.say('command', command, false)
+            }
             this.consecutiveAutoApprovedRequestsCount++
             didAutoApprove = true
           } else {
@@ -3084,7 +3090,9 @@ export class Task {
         const ipList = ip!.split(',')
         let uiResult = ''
         for (const singleIp of ipList) {
-          const output = await this.executeCommandTool(command!, singleIp)
+          const output = useVisibleTerminalExecution
+            ? await this.executeCommandInVisibleTerminal(command!, singleIp)
+            : await this.executeCommandTool(command!, singleIp)
           await this.pushToolResult(toolDescription, output, {
             toolName: block.name,
             ip: singleIp
@@ -3377,6 +3385,32 @@ export class Task {
       await this.saveCheckpoint()
     }
     return approved
+  }
+
+  /**
+   * Execute through the renderer-owned xterm session so the user sees the
+   * command, remote echo, and output in the same terminal they control.
+   * `command_execution` is an internal control message and is removed from
+   * persisted UI history after its structured tool result arrives.
+   */
+  private async executeCommandInVisibleTerminal(command: string, ip: string): Promise<ToolResponse> {
+    const { response, toolResult } = await this.ask('command_execution', JSON.stringify({ command, ip }), false)
+
+    const lastMessage = this.chatermMessages.at(-1)
+    if (lastMessage?.type === 'ask' && lastMessage.ask === 'command_execution') {
+      this.chatermMessages.pop()
+      await this.saveChatermMessagesAndUpdateHistory()
+    }
+
+    if (response !== 'yesButtonClicked' || !toolResult) {
+      return `Visible terminal execution failed on ${ip}: terminal did not return a command result`
+    }
+
+    if (toolResult.isError) {
+      return `Visible terminal execution failed on ${ip}: ${toolResult.output}`
+    }
+
+    return toolResult.output || 'Command executed successfully, no output returned'
   }
 
   private showNotificationIfNeeded(message: string): void {

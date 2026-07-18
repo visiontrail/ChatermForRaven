@@ -128,6 +128,7 @@ describe('useChatMessages', () => {
     mockSendToMain.mockResolvedValue({ success: true })
     mockKbCreateFile.mockResolvedValue({ relPath: '2026-01-28_test.md' })
     mockKbWriteFile.mockResolvedValue({ mtimeMs: Date.now() })
+    vi.mocked(eventBus.emit).mockReset()
     ;(window as any).ravenEmbedded = undefined
     ;(window as any).ravenLLM = undefined
   })
@@ -532,6 +533,43 @@ describe('useChatMessages', () => {
       expect(session.chatHistory[0].say).toBe('command_output')
     })
 
+    it('should return visible terminal tool results without adding a right-side output message', async () => {
+      const { sendMessageWithContent } = useChatMessages(
+        mockScrollToBottom,
+        mockClearTodoState,
+        mockMarkLatestMessageWithTodoUpdate,
+        mockCurrentTodos,
+        mockCheckModelConfig
+      )
+
+      const mockState = vi.mocked(useSessionState)()
+      const session = mockState.currentSession.value!
+      session.chatHistory.push({
+        id: 'request',
+        role: 'user',
+        content: 'run a command',
+        type: 'message',
+        ask: '',
+        say: '',
+        ts: 1
+      })
+
+      await sendMessageWithContent('', 'commandSend', undefined, undefined, undefined, undefined, {
+        output: 'visible output',
+        toolName: 'execute_command',
+        suppressChatMessage: true
+      })
+
+      expect(mockSendToMain).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'askResponse',
+          toolResult: expect.objectContaining({ output: 'visible output', suppressChatMessage: true })
+        })
+      )
+      expect(session.chatHistory).toHaveLength(1)
+      expect(session.responseLoading).toBe(true)
+    })
+
     it('should scroll to bottom after sending', async () => {
       const { sendMessageWithContent } = useChatMessages(
         mockScrollToBottom,
@@ -745,6 +783,47 @@ describe('useChatMessages', () => {
   })
 
   describe('processMainMessage', () => {
+    it('dispatches command_execution to the active terminal without rendering a chat card', async () => {
+      ;(eventBus.emit as any).mockImplementation((event: string, payload: any) => {
+        if (event === 'executeTerminalCommand') {
+          payload.onDispatch?.({ accepted: true })
+        }
+      })
+
+      const { processMainMessage } = useChatMessages(
+        mockScrollToBottom,
+        mockClearTodoState,
+        mockMarkLatestMessageWithTodoUpdate,
+        mockCurrentTodos,
+        mockCheckModelConfig
+      )
+      const state = vi.mocked(useSessionState)()
+
+      await processMainMessage({
+        type: 'partialMessage',
+        taskId: 'test-tab-1',
+        partialMessage: {
+          ts: 10,
+          type: 'ask',
+          ask: 'command_execution',
+          text: JSON.stringify({ command: 'uptime', ip: '127.0.0.1' }),
+          partial: false
+        }
+      } as ExtensionMessage)
+
+      expect(eventBus.emit).toHaveBeenCalledWith(
+        'executeTerminalCommand',
+        expect.objectContaining({
+          command: 'uptime\n',
+          tabId: 'test-tab-1',
+          targetHost: '127.0.0.1',
+          suppressChatMessage: true
+        })
+      )
+      expect(state.currentSession.value!.chatHistory).toHaveLength(0)
+      expect(state.currentSession.value!.isExecutingCommand).toBe(true)
+    })
+
     it('should ignore messages without tabId or taskId', async () => {
       const { processMainMessage } = useChatMessages(
         mockScrollToBottom,

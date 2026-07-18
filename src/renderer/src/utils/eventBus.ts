@@ -8,7 +8,13 @@ import type { ToolResultPayload } from '@shared/WebviewMessage'
 export interface AppEvents {
   currentClickServer: any // Can be replaced with actual item type instead of any
   updateRightIcon: boolean // Update right icon status
-  executeTerminalCommand: { command: string; tabId?: string } // Execute terminal command
+  executeTerminalCommand: {
+    command: string
+    tabId?: string
+    targetHost?: string
+    suppressChatMessage?: boolean
+    onDispatch?: (result: { accepted: boolean; error?: string }) => void
+  } // Execute terminal command
   autoExecuteCode: { command: string; tabId: string }
   focusActiveTerminal: string | undefined // Return focus to currently active terminal
   getActiveTabAssetInfo: void // Request to get asset information of current active tab

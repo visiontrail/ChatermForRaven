@@ -65,6 +65,7 @@ export type ToolResultPayload = {
   output: string
   toolName?: string
   isError?: boolean
+  suppressChatMessage?: boolean
 }
 
 export type WebviewMessageType =
@@ -133,7 +134,8 @@ export const WebviewMessageSchema = z
       .object({
         output: z.string(),
         toolName: z.string().optional(),
-        isError: z.boolean().optional()
+        isError: z.boolean().optional(),
+        suppressChatMessage: z.boolean().optional()
       })
       .optional(),
     apiConfiguration: z.record(z.unknown()).optional(),

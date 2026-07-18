@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { telemetryMocks } = vi.hoisted(() => ({
   telemetryMocks: {
@@ -75,6 +75,9 @@ vi.mock('../../../storage/chat_sync/index', () => ({
 }))
 
 import { Task } from '../index'
+import { getGlobalState } from '@core/storage/state'
+
+const originalEmbeddedEnv = process.env.CHATERM_EMBEDDED
 
 describe('Task interaction-heavy branches', () => {
   let task: any
@@ -134,6 +137,14 @@ describe('Task interaction-heavy branches', () => {
       noToolsUsed: () => 'No tools were used.',
       tooManyMistakes: (msg: string) => `Too many mistakes: ${msg}`,
       condense: () => 'Conversation condensed.'
+    }
+  })
+
+  afterEach(() => {
+    if (originalEmbeddedEnv === undefined) {
+      delete process.env.CHATERM_EMBEDDED
+    } else {
+      process.env.CHATERM_EMBEDDED = originalEmbeddedEnv
     }
   })
 
@@ -251,6 +262,45 @@ describe('Task interaction-heavy branches', () => {
     })
 
     expect(task.ask).toHaveBeenCalledWith('command', 'pwd', true)
+  })
+
+  it('routes embedded Agent commands through the visible terminal instead of background SSH exec', async () => {
+    process.env.CHATERM_EMBEDDED = '1'
+    vi.mocked(getGlobalState).mockImplementation(async (key: string) => {
+      if (key === 'chatSettings') return { mode: 'agent' } as any
+      if (key === 'autoApprovalSettings') return { actions: {} } as any
+      return {} as any
+    })
+    task.executeCommandInVisibleTerminal = vi.fn().mockResolvedValue('visible uptime output')
+
+    await task.handleExecuteCommandToolUse({
+      name: 'execute_command',
+      params: { command: 'uptime', ip: '10.0.0.8', requires_approval: 'false' },
+      partial: false
+    })
+
+    expect(task.executeCommandInVisibleTerminal).toHaveBeenCalledWith('uptime', '10.0.0.8')
+    expect(task.executeCommandTool).not.toHaveBeenCalled()
+    expect(task.pushToolResult).toHaveBeenCalledWith(
+      '[mock-tool]',
+      'visible uptime output',
+      expect.objectContaining({ toolName: 'execute_command', ip: '10.0.0.8' })
+    )
+  })
+
+  it('removes the internal command_execution request after receiving the terminal tool result', async () => {
+    task.chatermMessages = [{ ts: 1, type: 'ask', ask: 'command_execution', text: '{}' }]
+    task.ask = vi.fn().mockResolvedValue({
+      response: 'yesButtonClicked',
+      toolResult: { output: 'terminal result', toolName: 'execute_command', suppressChatMessage: true }
+    })
+
+    const result = await task.executeCommandInVisibleTerminal('pwd', '10.0.0.8')
+
+    expect(result).toBe('terminal result')
+    expect(task.ask).toHaveBeenCalledWith('command_execution', JSON.stringify({ command: 'pwd', ip: '10.0.0.8' }), false)
+    expect(task.chatermMessages).toHaveLength(0)
+    expect(task.saveChatermMessagesAndUpdateHistory).toHaveBeenCalledTimes(1)
   })
 
   it('handleKbSearchToolUse should send structured contentParts for kb results', async () => {

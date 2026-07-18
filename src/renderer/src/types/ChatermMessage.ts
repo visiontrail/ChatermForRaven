@@ -26,6 +26,7 @@ export interface ChatermMessage {
 export type ChatermAsk =
   | 'followup'
   | 'command'
+  | 'command_execution'
   | 'db_sql_approval'
   | 'command_output'
   | 'completion_result'
