@@ -70,7 +70,6 @@
           <Kubernetes v-if="localTab.content === 'kubernetes'" />
           <K8sClusterConfig v-if="localTab.content === 'k8sClusterConfig'" />
           <AliasConfig v-if="localTab.content === 'aliasConfig'" />
-          <jumpserverSupport v-if="localTab.content === 'jumpserverSupport'" />
           <AssetConfig v-if="localTab.content === 'assetConfig'" />
           <KeyManagement v-if="localTab.content === 'keyManagement'" />
           <McpConfigEditor v-if="localTab.content === 'mcpConfigEditor'" />
@@ -105,7 +104,6 @@ import UserInfo from '@views/components/LeftTab/config/userInfo.vue'
 import UserConfig from '@views/components/LeftTab/config/userConfig.vue'
 import AssetConfig from '@views/components/LeftTab/config/assetConfig.vue'
 import AliasConfig from '@views/components/Extensions/aliasConfig.vue'
-import jumpserverSupport from '@views/components/Extensions/jumpserverSupport.vue'
 import KeyManagement from '@views/components/LeftTab/config/keyManagement.vue'
 import SshConnect from '@views/components/Ssh/sshConnect.vue'
 import K8sConnect from '@views/components/K8s/K8sConnect.vue'

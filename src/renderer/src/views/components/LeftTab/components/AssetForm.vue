@@ -18,48 +18,6 @@
         layout="vertical"
         class="custom-form"
       >
-        <!-- Device category selection (Cascader) -->
-        <a-form-item
-          v-if="!isEditMode"
-          :label="t('personal.deviceCategory')"
-        >
-          <a-cascader
-            v-model:value="deviceTypePath"
-            :options="deviceOptions"
-            :placeholder="t('personal.selectDeviceType')"
-            style="width: 100%"
-            :allow-clear="false"
-            @change="handleDeviceTypeChange"
-          />
-        </a-form-item>
-
-        <!-- Bastion host selection (dynamic based on available definitions) -->
-        <a-form-item
-          v-if="!isEditMode && deviceTypePath[0] === 'server' && deviceTypePath[1] === 'bastion' && hasPluginBastions"
-          :label="t('personal.bastionType')"
-        >
-          <a-select
-            v-model:value="bastionType"
-            style="width: 100%"
-            :options="bastionTypeOptions"
-            @change="handleBastionTypeChange"
-          />
-        </a-form-item>
-
-        <!-- Switch brand selection (only when device is switch) -->
-        <a-form-item v-if="!isEditMode && deviceTypePath[0] === 'network' && deviceTypePath[1] === 'switch'">
-          <a-radio-group
-            v-model:value="switchBrand"
-            button-style="solid"
-            size="small"
-            style="width: 100%"
-            @change="handleSwitchBrandChange"
-          >
-            <a-radio-button value="cisco">{{ t('personal.switchCisco') }}</a-radio-button>
-            <a-radio-button value="huawei">{{ t('personal.switchHuawei') }}</a-radio-button>
-          </a-radio-group>
-        </a-form-item>
-
         <!-- Address information -->
         <div class="form-section">
           <div class="section-title">
@@ -108,10 +66,7 @@
             {{ t('personal.authentication') }}
           </div>
 
-          <a-form-item
-            v-if="showAuthMethodSelector"
-            :label="t('personal.verificationMethod')"
-          >
+          <a-form-item :label="t('personal.verificationMethod')">
             <a-radio-group
               v-model:value="formData.auth_type"
               button-style="solid"
@@ -119,16 +74,8 @@
               style="width: 100%"
               @change="handleAuthChange"
             >
-              <a-radio-button
-                v-if="currentBastionSupportsPassword"
-                value="password"
-                >{{ t('personal.password') }}</a-radio-button
-              >
-              <a-radio-button
-                v-if="currentBastionSupportsKey"
-                value="keyBased"
-                >{{ t('personal.key') }}</a-radio-button
-              >
+              <a-radio-button value="password">{{ t('personal.password') }}</a-radio-button>
+              <a-radio-button value="keyBased">{{ t('personal.key') }}</a-radio-button>
             </a-radio-group>
           </a-form-item>
 
@@ -182,20 +129,6 @@
                   </div>
                 </template>
               </a-select>
-            </a-form-item>
-
-            <a-form-item
-              v-if="isOrganizationAsset(formData.asset_type)"
-              :label="t('personal.password')"
-              :validate-status="validationErrors.password ? 'error' : ''"
-              :help="validationErrors.password"
-            >
-              <a-input-password
-                v-model:value="formData.password"
-                :placeholder="t('personal.pleaseInputPassword')"
-                :class="{ 'error-input': validationErrors.password }"
-                @input="handlePasswordInput"
-              />
             </a-form-item>
           </template>
 
@@ -305,75 +238,14 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, watch, ref, computed, onMounted } from 'vue'
+import { reactive, watch } from 'vue'
 import { ToTopOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import i18n from '@/locales'
 import eventBus from '@/utils/eventBus'
-import type { AssetFormData, KeyChainItem, SshProxyConfigItem, AssetType, BastionDefinitionSummary } from '../utils/types'
-import { getSwitchBrand, isOrganizationAsset, getBastionHostType, getAssetTypeFromBastionType, resolveBastionAuthType } from '../utils/types'
+import type { AssetFormData, KeyChainItem, SshProxyConfigItem } from '../utils/types'
 
 const { t } = i18n.global
-const logger = createRendererLogger('config.assetForm')
-
-// Available bastion definitions from plugins
-const availableBastions = ref<BastionDefinitionSummary[]>([])
-const hasPluginBastions = computed(() => availableBastions.value.length > 0)
-
-// Load available bastion definitions from capability registry
-const loadBastionDefinitions = async () => {
-  try {
-    const definitions = await window.api.getBastionDefinitions()
-    availableBastions.value = definitions || []
-    logger.info('Loaded bastion definitions', {
-      types: availableBastions.value.map((d) => d.type)
-    })
-  } catch (error) {
-    logger.warn('Failed to load bastion definitions', { error: error })
-    availableBastions.value = []
-  }
-}
-
-// Get display name for bastion type (using i18n key from definition)
-const getBastionDisplayName = (bastion: BastionDefinitionSummary): string => {
-  // Try to use the displayNameKey for i18n lookup
-  const i18nKey = bastion.displayNameKey
-  if (!i18nKey) return bastion.type
-  const translated = t(i18nKey)
-  // If translation not found (returns the key itself), use type as fallback
-  return translated !== i18nKey ? translated : bastion.type
-}
-
-// Check if a specific bastion type supports an auth method
-const bastionSupportsAuth = (bastionType: string, authMethod: 'password' | 'keyBased'): boolean => {
-  if (bastionType === 'jumpserver') {
-    // JumpServer supports both password and keyBased
-    return true
-  }
-  const definition = availableBastions.value.find((d) => d.type === bastionType)
-  if (!definition) return authMethod === 'password' // Default to password if not found
-  return definition.authPolicy.includes(authMethod)
-}
-
-const bastionTypeOptions = computed(() => {
-  const options = [{ label: 'JumpServer', value: 'jumpserver' }]
-
-  if (availableBastions.value && availableBastions.value.length > 0) {
-    availableBastions.value.forEach((bastion) => {
-      options.push({
-        label: getBastionDisplayName(bastion),
-        value: bastion.type
-      })
-    })
-  }
-
-  return options
-})
-
-// Check on mount
-onMounted(() => {
-  loadBastionDefinitions()
-})
 
 interface Props {
   isEditMode?: boolean
@@ -398,72 +270,6 @@ const emit = defineEmits<{
   'auth-change': [authType: string]
 }>()
 
-// Device type path for Cascader: ['server'] or ['network', 'switch']
-const deviceTypePath = ref<string[]>([])
-
-const deviceOptions = computed(() => [
-  {
-    value: 'server',
-    label: t('personal.deviceServer'),
-    children: [
-      { value: 'personal', label: t('personal.personalAsset') },
-      { value: 'bastion', label: t('personal.bastionHost') }
-    ]
-  },
-  {
-    value: 'network',
-    label: t('personal.deviceNetwork'),
-    children: [{ value: 'switch', label: t('personal.deviceSwitch') }]
-  }
-])
-
-// Initialize deviceTypePath based on initialData
-const initDeviceTypePath = () => {
-  if (props.initialData?.asset_type?.startsWith('person-switch-')) {
-    deviceTypePath.value = ['network', 'switch']
-  } else if (isOrganizationAsset(props.initialData?.asset_type)) {
-    deviceTypePath.value = ['server', 'bastion']
-  } else {
-    deviceTypePath.value = ['server', 'personal']
-  }
-}
-
-// Call initialization
-initDeviceTypePath()
-
-// Bastion host type: 'jumpserver' or plugin type (e.g., 'qizhi', 'tencent')
-const bastionType = ref<string>(getBastionHostType(props.initialData?.asset_type) || 'jumpserver')
-
-// Switch brand: 'cisco' or 'huawei'
-const switchBrand = ref<'cisco' | 'huawei'>(getSwitchBrand(props.initialData?.asset_type) || 'cisco')
-
-const applyBastionType = () => {
-  formData.asset_type = getAssetTypeFromBastionType(bastionType.value)
-}
-
-// Computed properties for dynamic auth method display
-const currentBastionSupportsPassword = computed(() => {
-  if (!isOrganizationAsset(formData.asset_type)) return true // Personal assets always support password
-  return bastionSupportsAuth(bastionType.value, 'password')
-})
-
-const currentBastionSupportsKey = computed(() => {
-  if (!isOrganizationAsset(formData.asset_type)) return true // Personal assets always support key
-  return bastionSupportsAuth(bastionType.value, 'keyBased')
-})
-
-// Show auth method selector: for personal assets, switches, or bastions with multiple auth options
-const showAuthMethodSelector = computed(() => {
-  const assetType = formData.asset_type
-  // Personal server or switch - show selector
-  if (assetType === 'person' || assetType?.startsWith('person-switch-')) return true
-  // Organization asset - show selector only if both auth methods are supported
-  if (isOrganizationAsset(assetType)) {
-    return currentBastionSupportsPassword.value && currentBastionSupportsKey.value
-  }
-  return false
-})
-
 const formData = reactive<AssetFormData>({
   username: '',
   password: '',
@@ -473,10 +279,10 @@ const formData = reactive<AssetFormData>({
   auth_type: 'password',
   keyChain: undefined,
   port: 22,
-  asset_type: 'person',
   needProxy: false,
   proxyName: '',
-  ...props.initialData
+  ...props.initialData,
+  asset_type: 'person'
 })
 
 const cachedAuth = reactive<{ password: string; keyChain?: number }>({
@@ -500,60 +306,6 @@ watch(
   },
   { immediate: true }
 )
-
-const syncAuthType = () => {
-  const resolved = resolveBastionAuthType(formData.asset_type, availableBastions.value, formData.auth_type)
-  if (resolved !== formData.auth_type) {
-    formData.auth_type = resolved
-  }
-}
-
-watch([() => formData.asset_type, () => availableBastions.value], syncAuthType, { immediate: true })
-
-watch(
-  [() => props.isEditMode, () => formData.asset_type],
-  ([editing, assetType]) => {
-    // In edit mode, keep current auth type for all bastion hosts
-    if (editing && isOrganizationAsset(assetType)) {
-      // Preserve current auth_type from initial data
-    }
-  },
-  { immediate: true }
-)
-
-// Handle device type change from Cascader
-const handleDeviceTypeChange = (val: string[]) => {
-  if (!val || val.length === 0) return
-
-  if (val[0] === 'server') {
-    if (val[1] === 'personal') {
-      // Personal server
-      formData.asset_type = 'person'
-      formData.auth_type = 'password'
-    } else if (val[1] === 'bastion') {
-      // Bastion host
-      applyBastionType()
-    }
-  } else if (val[0] === 'network' && val[1] === 'switch') {
-    // Switching to network switch
-    formData.asset_type = `person-switch-${switchBrand.value}` as AssetType
-    formData.auth_type = 'password'
-  }
-}
-
-// Handle bastion host type change (jumpserver/qizhi)
-const handleBastionTypeChange = () => {
-  if (deviceTypePath.value[0] === 'server' && deviceTypePath.value[1] === 'bastion') {
-    applyBastionType()
-  }
-}
-
-// Handle switch brand change (cisco/huawei)
-const handleSwitchBrandChange = () => {
-  if (deviceTypePath.value[0] === 'network' && deviceTypePath.value[1] === 'switch') {
-    formData.asset_type = `person-switch-${switchBrand.value}` as AssetType
-  }
-}
 
 const handleClose = () => {
   emit('close')
@@ -666,6 +418,7 @@ const handleSubmit = () => {
   if (!validateForm()) return
 
   const submitData = { ...formData }
+  submitData.asset_type = 'person'
   if (!submitData.group_name || submitData.group_name.trim() === '') {
     submitData.group_name = t('personal.defaultGroup')
   }
@@ -726,10 +479,10 @@ watch(
       auth_type: 'password',
       keyChain: undefined,
       port: 22,
-      asset_type: 'person',
       needProxy: false,
       proxyName: '',
-      ...newData
+      ...newData,
+      asset_type: 'person'
     })
     Object.assign(validationErrors, {
       ip: '',

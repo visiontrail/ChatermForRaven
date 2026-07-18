@@ -932,6 +932,15 @@ const readDndPayload = (e: DragEvent) => {
   }
 }
 
+const hasExternalFiles = (e: DragEvent) => {
+  const dt = e.dataTransfer
+  if (!dt) return false
+
+  if (dt.files?.length) return true
+  if (Array.from(dt.items || []).some((item) => item.kind === 'file')) return true
+  return Array.from(dt.types || []).includes('Files')
+}
+
 const clearDragHover = () => {
   if (dragHoverRow.value !== null) dragHoverRow.value = null
   if (dragHoverTargetDir.value !== null) dragHoverTargetDir.value = null
@@ -1023,14 +1032,14 @@ const onRowDragEnd = () => {
   lastHitTestAt = 0
 }
 const onDropZoneEnter = (e: DragEvent) => {
-  if (uiMode.value !== 'transfer' || !panelSide.value) return
+  if (!hasExternalFiles(e) && (uiMode.value !== 'transfer' || !panelSide.value)) return
   dragDepth++
   cancelLeaveTimer()
   onDropZoneOver(e)
 }
 
 const onDropZoneLeave = (_e: DragEvent) => {
-  if (uiMode.value !== 'transfer' || !panelSide.value) return
+  if (uiMode.value !== 'transfer' && !dropActive.value && !dropNotAllowed.value) return
   // `dragenter`/`dragleave` events are frequently triggered between child nodes. Use depth counting to avoid jitter
   dragDepth = Math.max(0, dragDepth - 1)
   if (dragDepth === 0) scheduleLeaveClear()
@@ -1102,7 +1111,8 @@ const onAnyDndFinish = () => {
 }
 
 const onDropZoneOver = (e: DragEvent) => {
-  if (uiMode.value !== 'transfer' || !panelSide.value) return
+  const isExternalFileDrag = hasExternalFiles(e)
+  if (!isExternalFileDrag && (uiMode.value !== 'transfer' || !panelSide.value)) return
 
   if (dragDepth === 0) dragDepth = 1
   cancelLeaveTimer()
@@ -1112,20 +1122,7 @@ const onDropZoneOver = (e: DragEvent) => {
 
   const dt = e.dataTransfer
 
-  const fromSide = getGlobalDragFromSide() || ''
-  const isFsItem = !!fromSide
-
-  // Non-file transfer drag and drop: not participating in drop
-  if (!isFsItem || !fromSide) {
-    clearDropState()
-    return
-  }
-
-  const sameSide = fromSide === panelSide.value
-  const crossSide = fromSide !== panelSide.value
-
-  if (sameSide) {
-    // Same side: Display prohibition symbol
+  if (isExternalFileDrag && isLocal.value) {
     dropNotAllowed.value = true
     dropActive.value = false
     clearDragHover()
@@ -1137,9 +1134,27 @@ const onDropZoneOver = (e: DragEvent) => {
     return
   }
 
-  if (!crossSide) {
-    clearDropState()
-    return
+  if (!isExternalFileDrag) {
+    const fromSide = getGlobalDragFromSide() || ''
+
+    // Non-file transfer drag and drop: not participating in drop
+    if (!fromSide) {
+      clearDropState()
+      return
+    }
+
+    if (fromSide === panelSide.value) {
+      // Same side: Display prohibition symbol
+      dropNotAllowed.value = true
+      dropActive.value = false
+      clearDragHover()
+      clearHoverRowDom()
+
+      e.preventDefault()
+      e.stopPropagation()
+      if (dt) dt.dropEffect = 'none'
+      return
+    }
   }
 
   dropNotAllowed.value = false
@@ -1169,7 +1184,7 @@ const onDropZoneOver = (e: DragEvent) => {
       }
       lastHitTestAt = now
 
-      const el = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null
+      const el = document.elementFromPoint?.(ev.clientX, ev.clientY) as HTMLElement | null
       const tr = el?.closest?.('tr.ant-table-row, .ant-table-row') as HTMLElement | null
       if (tr) lastRowElCache = tr
       return tr
@@ -1196,7 +1211,7 @@ const onDropZoneOver = (e: DragEvent) => {
 }
 
 const getHoveredDirByPoint = (ev: DragEvent) => {
-  const el = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null
+  const el = document.elementFromPoint?.(ev.clientX, ev.clientY) as HTMLElement | null
   const tr = el?.closest?.('tr.ant-table-row, .ant-table-row') as HTMLElement | null
   const rowKey = tr?.getAttribute?.('data-row-key') || (tr as any)?.dataset?.rowKey || ''
   if (!rowKey) return null
@@ -1208,11 +1223,57 @@ const getHoveredDirByPoint = (ev: DragEvent) => {
   return null
 }
 
-const onDropZoneDrop = (e: DragEvent) => {
+const uploadDroppedFiles = async (droppedFiles: File[], remotePath: string) => {
+  const results = await Promise.all(
+    droppedFiles.map(async (file) => {
+      let localPath = ''
+      try {
+        localPath = String(api.getPathForFile?.(file) || (file as any).path || '')
+      } catch {}
+
+      if (!localPath) return { file, status: 'error', message: t('files.uploadError') }
+
+      try {
+        const result = await api.uploadFile({
+          id: props.uuid,
+          remotePath,
+          localPath
+        })
+        return { file, status: result?.status || 'error', message: result?.message || '' }
+      } catch (error) {
+        return { file, status: 'error', message: (error as Error).message }
+      }
+    })
+  )
+
+  const succeeded = results.filter((result) => result.status === 'success')
+  const failed = results.filter((result) => result.status !== 'success')
+
+  if (succeeded.length) refresh()
+
+  if (!failed.length) {
+    message.success({ content: t('files.uploadSuccess'), key, duration: 3 })
+    return
+  }
+
+  const failedNames = failed
+    .map(({ file }) => file.name)
+    .filter(Boolean)
+    .join(', ')
+  const content = `${t('files.uploadFailed')}：${failedNames || failed[0]?.message || t('files.uploadError')}`
+  const config = { content, key, duration: 3 }
+  if (succeeded.length) message.warning(config)
+  else message.error(config)
+}
+
+const onDropZoneDrop = async (e: DragEvent) => {
   // Always prevent default on drop to avoid browser side-effects
   e.preventDefault()
+  e.stopPropagation()
+  const droppedFiles = Array.from(e.dataTransfer?.files || [])
   const dropHitDir = getHoveredDirByPoint(e)
   const hoveredDir = dropHitDir || lastHoverDir
+  const targetDir = hoveredDir || joinPath(basePath.value, localCurrentDirectoryInput.value)
 
   // Drag end: Unified cleanup
   setGlobalDragFromSide(null)
@@ -1230,6 +1291,11 @@ const onDropZoneDrop = (e: DragEvent) => {
   lastRowElCache = null
   lastHitTestAt = 0
 
+  if (droppedFiles.length) {
+    if (!isLocal.value) await uploadDroppedFiles(droppedFiles, targetDir)
+    return
+  }
+
   if (uiMode.value !== 'transfer' || !panelSide.value) return
 
   const payload = readDndPayload(e)
@@ -1242,7 +1308,7 @@ const onDropZoneDrop = (e: DragEvent) => {
     toUuid: props.uuid,
     toSide: panelSide.value,
     // Drop to the directory where the hover is located first; otherwise, drop to the current directory
-    targetDir: hoveredDir || joinPath(basePath.value, localCurrentDirectoryInput.value)
+    targetDir
   })
 }
 

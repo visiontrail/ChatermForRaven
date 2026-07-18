@@ -73,13 +73,6 @@ const eventBus = vi.hoisted(() => {
 })
 vi.mock('@/utils/eventBus', () => ({ default: eventBus }))
 
-const refreshOrganizationAssetFromWorkspace = vi.fn(async (_node: any, cb?: () => void) => {
-  cb?.()
-})
-vi.mock('../../LeftTab/components/refreshOrganizationAssets', () => ({
-  refreshOrganizationAssetFromWorkspace
-}))
-
 const isOrganizationAsset = vi.fn(() => false)
 vi.mock('../../LeftTab/utils/types', () => ({ isOrganizationAsset }))
 
@@ -315,31 +308,14 @@ describe('tabIndex.vue (enhanced coverage)', () => {
     wrapper.unmount()
   })
 
-  it('tab change: switches to enterprise workspace and loads folders + organization tree', async () => {
-    api.getCustomFolders.mockResolvedValueOnce({ data: { message: 'success', folders: [{ uuid: 'f1', name: 'Folder1' }] } })
-    api.getLocalAssetRoute.mockResolvedValueOnce({ data: { routers: [] } }) // initial personal
-    api.getLocalAssetRoute.mockResolvedValueOnce({
-      data: { routers: [{ key: 'org-root', title: 'OrgRoot', children: [] }] }
-    }) // enterprise
-
+  it('shows one unified SSH resource tree without personal or enterprise tabs', async () => {
+    api.getLocalAssetRoute.mockResolvedValueOnce({ data: { routers: [] } })
     const wrapper = await mountView()
-    const vm: any = wrapper.vm
 
-    vm.selectedKeys = ['something']
-    vm.searchValue = 'x'
-    vm.expandedKeys = ['k']
-
-    vm.handleTabChange('remote')
-    await flushPromises()
-    vi.runOnlyPendingTimers()
-    await flushPromises()
-
-    expect(vm.company).toBe('remote')
-    expect(vm.selectedKeys).toEqual([])
-    expect(vm.expandedKeys).toEqual([])
-    expect(vm.searchValue).toBe('')
-    expect(api.getCustomFolders).toHaveBeenCalled()
-    expect(api.getLocalAssetRoute).toHaveBeenCalledWith({ searchType: 'tree', params: ['organization'] })
+    expect(wrapper.find('.a-tabs').exists()).toBe(false)
+    expect(wrapper.find('.a-tree').exists()).toBe(true)
+    expect(api.getLocalAssetRoute).toHaveBeenCalledWith({ searchType: 'tree', params: ['person'] })
+    expect(api.getLocalAssetRoute).not.toHaveBeenCalledWith({ searchType: 'tree', params: ['organization'] })
 
     wrapper.unmount()
   })
@@ -422,10 +398,6 @@ describe('tabIndex.vue (enhanced coverage)', () => {
     api.getLocalAssetRoute.mockResolvedValueOnce({ data: { routers: [] } })
     const wrapper = await mountView()
     const vm: any = wrapper.vm
-
-    // Switch to enterprise so "create folder" flows match real usage
-    vm.handleTabChange('remote')
-    await flushPromises()
 
     // validation
     vm.createFolderForm = { name: '   ', description: '' }
@@ -540,26 +512,6 @@ describe('tabIndex.vue (enhanced coverage)', () => {
     expect(dataTransfer.setData).toHaveBeenCalledWith('application/x-asset-sftp', expect.any(String))
     expect(dataTransfer.setData).toHaveBeenCalledWith('text/plain', 'Host')
     expect(dataTransfer.effectAllowed).toBe('copy')
-
-    wrapper.unmount()
-  })
-
-  it('handleRefresh: invokes refresh helper and clears refreshingNode after delay', async () => {
-    api.getLocalAssetRoute.mockResolvedValueOnce({ data: { routers: [] } }) // mount
-    api.getLocalAssetRoute.mockResolvedValueOnce({ data: { routers: [] } }) // refresh callback
-    const wrapper = await mountView()
-    const vm: any = wrapper.vm
-
-    vm.handleTabChange('remote')
-    await flushPromises()
-
-    await vm.handleRefresh({ key: 'org-root', title: 'OrgRoot' })
-    expect(refreshOrganizationAssetFromWorkspace).toHaveBeenCalled()
-    expect(vm.refreshingNode).toBe('org-root')
-
-    vi.advanceTimersByTime(800)
-    await flushPromises()
-    expect(vm.refreshingNode).toBe(null)
 
     wrapper.unmount()
   })

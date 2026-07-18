@@ -148,6 +148,7 @@ type ApiStub = {
   openSaveDialog: ReturnType<typeof vi.fn>
   uploadFile: ReturnType<typeof vi.fn>
   uploadDirectory: ReturnType<typeof vi.fn>
+  getPathForFile: ReturnType<typeof vi.fn>
   downloadFile: ReturnType<typeof vi.fn>
   renameFile: ReturnType<typeof vi.fn>
   deleteFile: ReturnType<typeof vi.fn>
@@ -163,6 +164,7 @@ const makeApi = (): ApiStub => ({
   openSaveDialog: vi.fn().mockResolvedValue(null),
   uploadFile: vi.fn().mockResolvedValue({ status: 'success' }),
   uploadDirectory: vi.fn().mockResolvedValue({ status: 'success' }),
+  getPathForFile: vi.fn((file: File) => `/local/${file.name}`),
   downloadFile: vi.fn().mockResolvedValue({ status: 'success' }),
   renameFile: vi.fn().mockResolvedValue({ status: 'success' }),
   deleteFile: vi.fn().mockResolvedValue({ status: 'success' }),
@@ -368,6 +370,98 @@ describe('files.vue (enhanced)', () => {
     await vm.uploadFolder()
     await flushPromises()
     expect(message.error).toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('uploads files dragged from the OS into the current remote directory', async () => {
+    const { message } = await import('ant-design-vue')
+    const wrapper = mountView({
+      uuid: 'root@10.0.0.2:ssh:files-left',
+      currentDirectoryInput: '/home/root',
+      uiMode: 'transfer',
+      panelSide: 'left'
+    })
+    await flushPromises()
+
+    const files = [new File(['one'], 'one.txt'), new File(['two'], 'two.txt')]
+    const dataTransfer = {
+      files,
+      items: files.map(() => ({ kind: 'file' })),
+      types: ['Files'],
+      dropEffect: 'none',
+      getData: vi.fn().mockReturnValue('')
+    }
+    const dragOverEvent = {
+      dataTransfer,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+      target: wrapper.find('.transfer-drop-zone').element
+    } as any as DragEvent
+
+    ;(wrapper.vm as any).onDropZoneOver(dragOverEvent)
+    expect(dragOverEvent.preventDefault).toHaveBeenCalled()
+    expect(dragOverEvent.stopPropagation).toHaveBeenCalled()
+    expect(dataTransfer.dropEffect).toBe('copy')
+    expect((wrapper.vm as any).dropActive).toBe(true)
+
+    const dropEvent = {
+      ...dragOverEvent,
+      clientX: 0,
+      clientY: 0,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn()
+    } as any as DragEvent
+    await (wrapper.vm as any).onDropZoneDrop(dropEvent)
+    await flushPromises()
+
+    expect(api.getPathForFile).toHaveBeenCalledTimes(2)
+    expect(api.uploadFile).toHaveBeenNthCalledWith(1, {
+      id: 'root@10.0.0.2:ssh:files-left',
+      remotePath: '/home/root',
+      localPath: '/local/one.txt'
+    })
+    expect(api.uploadFile).toHaveBeenNthCalledWith(2, {
+      id: 'root@10.0.0.2:ssh:files-left',
+      remotePath: '/home/root',
+      localPath: '/local/two.txt'
+    })
+    expect(api.sshSftpList).toHaveBeenLastCalledWith({ path: '/home/root', id: 'root@10.0.0.2:ssh:files-left' })
+    expect(message.success).toHaveBeenCalledWith(expect.objectContaining({ content: 'Upload success' }))
+    expect((wrapper.vm as any).dropActive).toBe(false)
+
+    wrapper.unmount()
+  })
+
+  it('does not upload OS files dropped onto the local file panel', async () => {
+    const wrapper = mountView({ uiMode: 'transfer', panelSide: 'left' })
+    await flushPromises()
+
+    const file = new File(['local'], 'local.txt')
+    const dataTransfer = {
+      files: [file],
+      items: [{ kind: 'file' }],
+      types: ['Files'],
+      dropEffect: 'copy',
+      getData: vi.fn().mockReturnValue('')
+    }
+    const dragOverEvent = {
+      dataTransfer,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+      target: wrapper.find('.transfer-drop-zone').element
+    } as any as DragEvent
+
+    ;(wrapper.vm as any).onDropZoneOver(dragOverEvent)
+    expect(dataTransfer.dropEffect).toBe('none')
+    expect((wrapper.vm as any).dropNotAllowed).toBe(true)
+
+    await (wrapper.vm as any).onDropZoneDrop({
+      ...dragOverEvent,
+      clientX: 0,
+      clientY: 0
+    } as any as DragEvent)
+    expect(api.uploadFile).not.toHaveBeenCalled()
 
     wrapper.unmount()
   })

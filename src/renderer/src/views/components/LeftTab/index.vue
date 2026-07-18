@@ -2,7 +2,7 @@
   <div class="term_left_tab">
     <div class="main-menu">
       <a-tooltip
-        v-for="i in menuTabsData.slice(0, -2)"
+        v-for="i in mainMenuTabs"
         :key="i.key"
         :title="i.name"
         placement="right"
@@ -192,6 +192,7 @@ const showUserMenu = ref<boolean>(false)
 const isSkippedLogin = ref<boolean>(localStorage.getItem('login-skipped') === 'true')
 const router = useRouter()
 const isEmbedded = isChatermEmbedded()
+const mainMenuTabs = computed(() => menuTabsData.slice(0, -2).filter((item) => !(isEmbedded && item.key === 'knowledgecenter')))
 const bottomMenuTabs = computed(() => menuTabsData.slice(-2).filter((item) => !(isEmbedded && item.key === 'user')))
 
 const goToLogin = () => {

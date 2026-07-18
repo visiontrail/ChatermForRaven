@@ -1,22 +1,6 @@
 <template>
   <div class="term_host_list">
     <div class="term_host_header">
-      <div class="workspace-tabs-container">
-        <a-tabs
-          v-model:active-key="company"
-          type="card"
-          size="small"
-          class="workspace-tabs"
-          @change="handleTabChange"
-        >
-          <a-tab-pane
-            v-for="item in workspaceData"
-            :key="item.key"
-            :tab="t(item.label)"
-          />
-        </a-tabs>
-      </div>
-
       <div style="width: 100%; margin-top: 4px">
         <div class="manage">
           <a-input
@@ -44,33 +28,7 @@
               <swap-outlined />
             </a-button>
           </a-tooltip>
-          <a-dropdown
-            v-if="!isPersonalWorkspace"
-            :trigger="['click']"
-            placement="bottomRight"
-          >
-            <a-button
-              type="primary"
-              size="small"
-              class="workspace-button"
-            >
-              <appstore-add-outlined />
-            </a-button>
-            <template #overlay>
-              <a-menu @click="handleMenuClick">
-                <a-menu-item key="customFolders">
-                  <folder-outlined />
-                  {{ t('personal.customFolders') }}
-                </a-menu-item>
-                <a-menu-item key="host">
-                  <laptop-outlined />
-                  {{ t('personal.host') }}
-                </a-menu-item>
-              </a-menu>
-            </template>
-          </a-dropdown>
           <a-tooltip
-            v-else
             :title="t('personal.host')"
             placement="top"
           >
@@ -89,203 +47,58 @@
           ref="treeContainerRef"
           class="tree-container"
         >
-          <div v-show="company === 'personal_user_id'">
-            <a-tree
-              v-model:selected-keys="selectedKeys"
-              v-model:expanded-keys="expandedKeys"
-              :tree-data="assetTreeData"
-              :field-names="{ children: 'children', title: 'title', key: 'key' }"
-              :virtual="true"
-              :height="treeHeight"
-              block-node
-              class="dark-tree"
-              @select="handleSelect"
-              @expand="onTreeExpand"
-            >
-              <template #title="{ title, dataRef }">
-                <div class="custom-tree-node">
-                  <span
-                    v-if="!isSecondLevel(dataRef)"
-                    class="title-with-icon"
-                    @click="handleFolderRowClick($event, dataRef)"
-                  >
-                    <span v-if="editingNode !== dataRef.key">
-                      {{ title }}
-                      <span
-                        v-if="!isSecondLevel(dataRef) && getOriginalChildrenCount(dataRef) > 0"
-                        class="child-count"
-                      >
-                        ({{ getOriginalChildrenCount(dataRef) }})
-                      </span>
-                    </span>
-                  </span>
-                  <span
-                    v-else-if="editingNode !== dataRef.key && commentNode !== dataRef.key"
-                    class="title-with-icon"
-                    :class="{ selected: selectedKeys.includes(dataRef.key) }"
-                    @click="handleClick(dataRef)"
-                    @dblclick="handleDblClick(dataRef)"
-                    @contextmenu="handleContextMenu($event, dataRef)"
-                  >
-                    <laptop-outlined class="computer-icon" />
-                    <span class="hostname-text">{{ getDisplayText(dataRef, title) }}</span>
-
-                    <div
-                      v-if="commentNode === dataRef.key"
-                      class="comment-edit-container"
-                    >
-                      <a-input
-                        v-model:value="editingComment"
-                        :placeholder="t('personal.commentPlaceholder')"
-                        size="small"
-                        @keyup.enter="saveComment(dataRef)"
-                        @keyup.esc="cancelComment"
-                      />
-                      <CheckOutlined
-                        class="confirm-icon"
-                        @click="saveComment(dataRef)"
-                      />
-                      <CloseOutlined
-                        class="cancel-icon"
-                        @click="cancelComment"
-                      />
-                    </div>
+          <a-tree
+            v-model:selected-keys="selectedKeys"
+            v-model:expanded-keys="expandedKeys"
+            :tree-data="assetTreeData"
+            :field-names="{ children: 'children', title: 'title', key: 'key' }"
+            :virtual="true"
+            :height="treeHeight"
+            block-node
+            class="dark-tree"
+            @select="handleSelect"
+            @expand="onTreeExpand"
+          >
+            <template #title="{ title, dataRef }">
+              <div class="custom-tree-node">
+                <span
+                  v-if="!isSecondLevel(dataRef)"
+                  class="title-with-icon"
+                  @click="handleFolderRowClick($event, dataRef)"
+                >
+                  <span v-if="editingNode !== dataRef.key">
+                    {{ title }}
                     <span
-                      v-if="dataRef.comment && editingNode !== dataRef.key && commentNode !== dataRef.key"
-                      class="comment-text"
-                      :title="dataRef.comment"
+                      v-if="!isSecondLevel(dataRef) && getOriginalChildrenCount(dataRef) > 0"
+                      class="child-count"
                     >
-                      ({{ dataRef.comment }})
-                    </span>
-                    <a-tooltip
-                      v-if="hasTunnelConfig(dataRef)"
-                      :title="isTunnelActive(dataRef) ? t('ssh.tunnelConnected') : t('ssh.tunnelCreated')"
-                    >
-                      <ApiOutlined
-                        class="tunnel-icon"
-                        :class="{ active: isTunnelActive(dataRef) }"
-                      />
-                    </a-tooltip>
-                  </span>
-                </div>
-              </template>
-            </a-tree>
-          </div>
-          <div v-show="company !== 'personal_user_id'">
-            <a-tree
-              v-model:selected-keys="selectedKeys"
-              v-model:expanded-keys="expandedKeys"
-              :tree-data="enterpriseData"
-              :field-names="{ children: 'children', title: 'title', key: 'key' }"
-              :virtual="true"
-              :height="treeHeight"
-              block-node
-              class="dark-tree"
-              @select="handleSelect"
-              @expand="onTreeExpand"
-            >
-              <template #title="{ title, dataRef }">
-                <div class="custom-tree-node">
-                  <span
-                    v-if="!isSecondLevel(dataRef)"
-                    class="title-with-icon"
-                    @click="handleFolderRowClick($event, dataRef)"
-                    @contextmenu="handleContextMenu($event, dataRef)"
-                  >
-                    <span v-if="editingNode !== dataRef.key">
-                      {{ title }}
-                      <span
-                        v-if="!isSecondLevel(dataRef) && getOriginalChildrenCount(dataRef) > 0"
-                        class="child-count"
-                      >
-                        ({{ getOriginalChildrenCount(dataRef) }})
-                      </span>
+                      ({{ getOriginalChildrenCount(dataRef) }})
                     </span>
                   </span>
-                  <span
-                    v-else-if="editingNode !== dataRef.key && commentNode !== dataRef.key"
-                    class="title-with-icon"
-                    :class="{ selected: selectedKeys.includes(dataRef.key) }"
-                    @click="handleClick(dataRef)"
-                    @dblclick="handleDblClick(dataRef)"
-                    @contextmenu="handleContextMenu($event, dataRef)"
+                </span>
+                <span
+                  v-else-if="editingNode !== dataRef.key"
+                  class="title-with-icon"
+                  :class="{ selected: selectedKeys.includes(dataRef.key) }"
+                  @click="handleClick(dataRef)"
+                  @dblclick="handleDblClick(dataRef)"
+                  @contextmenu="handleContextMenu($event, dataRef)"
+                >
+                  <laptop-outlined class="computer-icon" />
+                  <span class="hostname-text">{{ getDisplayText(dataRef, title) }}</span>
+                  <a-tooltip
+                    v-if="hasTunnelConfig(dataRef)"
+                    :title="isTunnelActive(dataRef) ? t('ssh.tunnelConnected') : t('ssh.tunnelCreated')"
                   >
-                    <laptop-outlined class="computer-icon" />
-                    <span class="hostname-text">{{ getDisplayText(dataRef, title) }}</span>
-                    <span
-                      v-if="dataRef.comment"
-                      class="comment-text"
-                      :title="dataRef.comment"
-                    >
-                      ({{ dataRef.comment }})
-                    </span>
-                    <a-tooltip
-                      v-if="hasTunnelConfig(dataRef)"
-                      :title="isTunnelActive(dataRef) ? t('ssh.tunnelConnected') : t('ssh.tunnelCreated')"
-                    >
-                      <ApiOutlined
-                        class="tunnel-icon"
-                        :class="{ active: isTunnelActive(dataRef) }"
-                      />
-                    </a-tooltip>
-                  </span>
-                  <!-- Comment edit input -->
-                  <span
-                    v-else-if="commentNode === dataRef.key"
-                    class="title-with-icon"
-                  >
-                    <laptop-outlined class="computer-icon" />
-                    <span class="hostname-text">{{ getDisplayText(dataRef, title) }}</span>
-                    <div class="comment-edit-container">
-                      <a-input
-                        v-model:value="editingComment"
-                        :placeholder="t('personal.commentPlaceholder')"
-                        size="small"
-                        @keyup.enter="saveComment(dataRef)"
-                        @keyup.esc="cancelComment"
-                      />
-                      <CheckOutlined
-                        class="confirm-icon"
-                        @click="saveComment(dataRef)"
-                      />
-                      <CloseOutlined
-                        class="cancel-icon"
-                        @click="cancelComment"
-                      />
-                    </div>
-                  </span>
-                  <div
-                    v-if="
-                      !isSecondLevel(dataRef) &&
-                      !dataRef.key.startsWith('common_') &&
-                      editingNode !== dataRef.key &&
-                      company !== 'personal_user_id' &&
-                      dataRef.title !== t('common.favoriteBar') &&
-                      dataRef.asset_type !== 'custom_folder' &&
-                      dataRef.asset_type !== 'recent_connections' &&
-                      !dataRef.isAssetGroup
-                    "
-                    class="refresh-icon"
-                  >
-                    <a-tooltip :title="$t('common.refresh')">
-                      <a-button
-                        type="primary"
-                        size="small"
-                        ghost
-                        class="refresh-button"
-                        :loading="refreshingNode === dataRef.key"
-                        @click="handleRefresh(dataRef)"
-                      >
-                        <template #icon>
-                          <RedoOutlined />
-                        </template>
-                      </a-button>
-                    </a-tooltip>
-                  </div>
-                </div>
-              </template>
-            </a-tree>
-          </div>
+                    <ApiOutlined
+                      class="tunnel-icon"
+                      :class="{ active: isTunnelActive(dataRef) }"
+                    />
+                  </a-tooltip>
+                </span>
+              </div>
+            </template>
+          </a-tree>
         </div>
       </div>
     </div>
@@ -626,20 +439,15 @@ import {
   StarOutlined,
   LaptopOutlined,
   SearchOutlined,
-  RedoOutlined,
   EditOutlined,
-  CheckOutlined,
-  CloseOutlined,
   FolderOutlined,
   DeleteOutlined,
-  AppstoreAddOutlined,
   SwapOutlined,
   ApiOutlined,
   QuestionCircleOutlined
 } from '@ant-design/icons-vue'
 import eventBus from '@/utils/eventBus'
 import i18n from '@/locales'
-import { refreshOrganizationAssetFromWorkspace } from '../LeftTab/components/refreshOrganizationAssets'
 import { isOrganizationAsset } from '../LeftTab/utils/types'
 import { userConfigStore } from '@/services/userConfigStoreService'
 import { message, Modal, Input, Button } from 'ant-design-vue'
@@ -647,14 +455,11 @@ import { message, Modal, Input, Button } from 'ant-design-vue'
 const { t } = i18n.global
 const emit = defineEmits(['currentClickServer', 'change-company', 'open-user-tab'])
 
-const company = ref('personal_user_id')
 const selectedKeys = ref<string[]>([])
 const expandedKeys = ref<string[]>([])
 const searchValue = ref('')
 const searchInputRef = ref()
 const editingNode = ref(null)
-const editingTitle = ref('')
-const refreshingNode = ref(null)
 const editingComment = ref('')
 const commentNode = ref(null)
 const showCreateFolderModal = ref(false)
@@ -780,24 +585,6 @@ const currentAssetTunnelConfigs = computed<TunnelConfig[]>(() => {
   return tunnelConfigMap.value[assetKey] || []
 })
 
-interface WorkspaceItem {
-  key: string
-  label: string
-  type: string
-}
-const workspaceData = ref<WorkspaceItem[]>([
-  {
-    key: 'personal_user_id',
-    label: 'personal.personal',
-    type: 'personal'
-  },
-  {
-    key: 'remote',
-    label: 'personal.enterprise',
-    type: 'organization'
-  }
-])
-
 interface AssetNode {
   key: string
   title: string
@@ -818,25 +605,6 @@ interface MachineOption {
 }
 
 const machines = ref<MachineOption | null>(null)
-
-const companyChange = (item) => {
-  company.value = item.key
-  // Reset tree-related state
-  selectedKeys.value = []
-  expandedKeys.value = []
-  searchValue.value = ''
-  editingNode.value = null
-  editingTitle.value = ''
-  // Close context menu when changing workspace
-  contextMenuVisible.value = false
-  contextMenuData.value = null
-  if (isPersonalWorkspace.value) {
-    getLocalAssetMenu()
-  } else {
-    loadCustomFolders()
-    getUserAssetMenu()
-  }
-}
 
 // Handle expand/collapse state changes and save to user config
 const handleExpandChange = async (expandedKeys: any[]) => {
@@ -872,21 +640,7 @@ const loadSavedExpandState = async () => {
   }
 }
 
-const handleTabChange = (activeKey: string | number) => {
-  // Close context menu when switching tabs
-  contextMenuVisible.value = false
-  contextMenuData.value = null
-
-  const item = workspaceData.value.find((item) => item.key === activeKey)
-  if (item) {
-    companyChange(item)
-  }
-}
-
-const isPersonalWorkspace = computed(() => {
-  const currentWorkspace = workspaceData.value.find((item) => item.key === company.value)
-  return currentWorkspace?.type === 'personal'
-})
+const isPersonalWorkspace = computed(() => true)
 const handleFavoriteClick = (dataRef: any) => {
   // Check if necessary fields exist
   if (!dataRef) {
@@ -1844,17 +1598,6 @@ const getDisplayText = (dataRef: any, title: string): string => {
   return title
 }
 
-const handleMenuClick = ({ key }) => {
-  switch (key) {
-    case 'customFolders':
-      showCreateFolderModal.value = true
-      break
-    case 'host':
-      assetManagement()
-      break
-  }
-}
-
 let clickTimer: any = null
 const handleClick = (dataRef: any) => {
   if (clickTimer) clearTimeout(clickTimer)
@@ -1871,59 +1614,9 @@ const handleDblClick = (dataRef: any) => {
   clickServer(dataRef)
 }
 
-const handleRefresh = async (dataRef: any) => {
-  logger.debug('Refreshing organization asset node', { key: dataRef.key })
-  refreshingNode.value = dataRef.key
-
-  try {
-    await refreshOrganizationAssetFromWorkspace(dataRef, () => {
-      getUserAssetMenu()
-    })
-  } catch (error) {
-    logger.error('Refresh failed', { error: error })
-    getUserAssetMenu()
-  } finally {
-    setTimeout(() => {
-      refreshingNode.value = null
-    }, 800)
-  }
-}
-
 const handleCommentClick = (dataRef: any) => {
   commentNode.value = dataRef.key
   editingComment.value = dataRef.comment || ''
-}
-
-const saveComment = async (dataRef: any) => {
-  try {
-    if (!window.api.updateOrganizationAssetComment) {
-      logger.error('updateOrganizationAssetComment method does not exist')
-      return
-    }
-
-    const result = await window.api.updateOrganizationAssetComment({
-      organizationUuid: dataRef.organizationId,
-      host: dataRef.ip,
-      comment: editingComment.value
-    })
-
-    if (result && result.data && result.data.message === 'success') {
-      dataRef.comment = editingComment.value
-      commentNode.value = null
-      editingComment.value = ''
-      // Refresh menu to show updates
-      getUserAssetMenu()
-    } else {
-      logger.error('Comment save failed', { result: String(result) })
-    }
-  } catch (error) {
-    logger.error('Save comment error', { error: error })
-  }
-}
-
-const cancelComment = () => {
-  commentNode.value = null
-  editingComment.value = ''
 }
 
 const loadCustomFolders = async () => {

@@ -241,3 +241,25 @@ describe('refreshOrganizationAssetsLogic', () => {
     expect(capture.insertArgs).toContain('comment-2')
   })
 })
+
+describe('getUserHostsLogic', () => {
+  it('returns legacy bastion and switch endpoints in one flat personal SSH list', async () => {
+    const all = vi.fn(() => [
+      { host: '10.0.0.10', uuid: 'org-1', asset_type: 'organization-qizhi', label: 'legacy-bastion' },
+      { host: '10.0.0.11', uuid: 'switch-1', asset_type: 'person-switch-huawei', label: 'legacy-switch' }
+    ])
+    const db = {
+      prepare: vi.fn(() => createStatement({ all }))
+    }
+
+    const { getUserHostsLogic } = await import('../assets.organization')
+    const result = getUserHostsLogic(db as any, '', 50)
+
+    expect(result.data.jumpservers).toEqual([])
+    expect(result.data.personal).toHaveLength(2)
+    expect(result.data.personal.map((host: any) => host.type)).toEqual(['personal', 'personal'])
+    expect(result.data.personal.map((host: any) => host.connection)).toEqual(['person', 'person'])
+    expect(result.data.personal.map((host: any) => host.assetType)).toEqual(['person', 'person'])
+    expect(all).toHaveBeenCalledWith('%', '%', 50)
+  })
+})

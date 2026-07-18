@@ -817,12 +817,46 @@ onMounted(async () => {
     connectSSH()
   }
 
-  const handleExecuteCommand = (payload: { command: string; tabId?: string }) => {
+  const handleExecuteCommand = (payload: {
+    command: string
+    tabId?: string
+    targetHost?: string
+    suppressChatMessage?: boolean
+    onDispatch?: (result: { accepted: boolean; error?: string }) => void
+  }) => {
     if (props.activeTabId !== props.currentConnectionId || !props.isActive) return
 
     if (!payload?.command) {
       logger.warn('handleExecuteCommand: command is empty')
+      payload?.onDispatch?.({ accepted: false, error: 'Visible terminal execution failed: command is empty' })
       return
+    }
+
+    const targetHost = payload.targetHost?.trim()
+    if (targetHost) {
+      const activeHosts = new Set(
+        [
+          props.connectData?.ip,
+          props.connectData?.host,
+          props.connectData?.hostname,
+          props.serverInfo?.ip,
+          props.serverInfo?.host,
+          props.serverInfo?.hostname,
+          props.connectData?.asset_type === 'shell' ? 'localhost' : undefined,
+          props.connectData?.asset_type === 'shell' ? '127.0.0.1' : undefined,
+          props.connectData?.asset_type === 'shell' ? '::1' : undefined
+        ]
+          .filter(Boolean)
+          .map((host) => String(host).trim())
+      )
+      if (!activeHosts.has(targetHost)) {
+        const activeHost = props.connectData?.ip || props.connectData?.host || props.connectData?.hostname || 'unknown'
+        payload.onDispatch?.({
+          accepted: false,
+          error: `Visible terminal execution blocked: target host ${targetHost} does not match active terminal ${activeHost}`
+        })
+        return
+      }
     }
 
     const tabId = typeof payload === 'string' ? undefined : payload?.tabId
@@ -831,7 +865,9 @@ onMounted(async () => {
 
     commandMarkerToTabId.value.set(uniqueMarker, tabId)
     commandMarkerToCommand.value.set(uniqueMarker, payload.command)
+    commandMarkerSuppressChatMessage.value.set(uniqueMarker, payload.suppressChatMessage === true)
 
+    payload.onDispatch?.({ accepted: true })
     sendMarkedData(payload.command, uniqueMarker)
     termInstance.focus()
   }
@@ -1000,6 +1036,7 @@ onBeforeUnmount(() => {
 
   commandMarkerToTabId.value.clear()
   commandMarkerToCommand.value.clear()
+  commandMarkerSuppressChatMessage.value.clear()
   currentCommandMarker.value = null
   currentCommandTabId.value = undefined
 
@@ -3419,6 +3456,7 @@ const handleCommandOutput = (data: string, isInitialCommand: boolean) => {
     const tabId = currentCommandTabId.value
     const marker = currentCommandMarker.value
     const sentCommand = marker ? commandMarkerToCommand.value.get(marker) : null
+    const suppressChatMessage = marker ? commandMarkerSuppressChatMessage.value.get(marker) === true : false
     const isWindowsLocal =
       props.connectData?.asset_type === 'shell' && (/^[A-Za-z]:[\\\/].*?>\s*$/.test(lastNonEmptyLine) || /^PS\s+[A-Za-z]:/.test(lastNonEmptyLine))
 
@@ -3955,7 +3993,8 @@ const handleCommandOutput = (data: string, isInitialCommand: boolean) => {
 
         const toolResult = {
           output: finalOutput || 'Command executed successfully, no output returned',
-          toolName: 'execute_command'
+          toolName: 'execute_command',
+          suppressChatMessage
         }
 
         if (finalOutput) {
@@ -3978,6 +4017,7 @@ const handleCommandOutput = (data: string, isInitialCommand: boolean) => {
         if (marker) {
           commandMarkerToTabId.value.delete(marker)
           commandMarkerToCommand.value.delete(marker)
+          commandMarkerSuppressChatMessage.value.delete(marker)
           currentCommandMarker.value = null
         }
         currentCommandTabId.value = undefined
@@ -3993,6 +4033,7 @@ const handleCommandOutput = (data: string, isInitialCommand: boolean) => {
     if (marker) {
       commandMarkerToTabId.value.delete(marker)
       commandMarkerToCommand.value.delete(marker)
+      commandMarkerSuppressChatMessage.value.delete(marker)
       currentCommandMarker.value = null
     }
     currentCommandTabId.value = undefined
@@ -5128,6 +5169,8 @@ const isCollectingOutput = ref(false)
 const commandMarkerToTabId = ref(new Map<string, string | undefined>())
 // Mapping from command marker to command content, used to remove command echo from output
 const commandMarkerToCommand = ref(new Map<string, string>())
+// Whether a visible Agent command result should stay out of the right chat pane.
+const commandMarkerSuppressChatMessage = ref(new Map<string, boolean>())
 const currentCommandMarker = ref<string | null>(null)
 const currentCommandTabId = ref<string | undefined>(undefined)
 

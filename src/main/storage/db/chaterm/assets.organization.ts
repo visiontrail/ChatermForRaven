@@ -2,7 +2,6 @@ import Database from 'better-sqlite3'
 import JumpServerClient from '../../../ssh/jumpserver/asset'
 import { v4 as uuidv4 } from 'uuid'
 import { capabilityRegistry } from '../../../ssh/capabilityRegistry'
-import { getOrganizationAssetTypesWithExisting } from './assets.routes'
 const logger = createLogger('db')
 
 /**
@@ -27,24 +26,6 @@ function extractBastionType(assetType: string): string {
  */
 function isPluginBastion(assetType: string): boolean {
   return assetType.startsWith('organization-')
-}
-
-/**
- * Build a single searchable title string for organization (bastion) child assets.
- * Used for UI search over IP plus bastion remark, hostname, and user comment.
- */
-function buildOrganizationAssetSearchTitle(row: {
-  bastion_comment?: string | null
-  hostname?: string | null
-  comment?: string | null
-}): string | undefined {
-  const parts: string[] = []
-  for (const v of [row.bastion_comment, row.hostname, row.comment]) {
-    if (v != null && String(v).trim()) {
-      parts.push(String(v).trim())
-    }
-  }
-  return parts.length > 0 ? parts.join(' ') : undefined
 }
 
 /** Display title when t_assets.label (name) differs from asset_ip (also used for direct/personal hosts) */
@@ -143,63 +124,18 @@ export function getUserHostsLogic(db: Database.Database, search: string, limit: 
     const searchPattern = safeSearch ? `%${safeSearch}%` : '%'
     const maxItems = Math.max(1, Math.floor(limit) || 50)
 
-    // Get available organization types dynamically, INCLUDING existing DB types
-    // This prevents accidental deletion of assets when plugins are not loaded
-    const orgTypes = getOrganizationAssetTypesWithExisting(db)
-    const orgTypePlaceholders = orgTypes.map(() => '?').join(', ')
-
-    // Auto cleanup orphaned organization assets
-    const deleteOrphanedStmt = db.prepare(`
-      DELETE FROM t_organization_assets
-      WHERE uuid IN (
-        SELECT oa.uuid
-        FROM t_organization_assets oa
-        LEFT JOIN t_assets a ON oa.organization_uuid = a.uuid AND a.asset_type IN (${orgTypePlaceholders})
-        WHERE a.uuid IS NULL
-      )
-    `)
-    deleteOrphanedStmt.run(...orgTypes)
-
-    // Step 1: Query personal assets (asset_type='person' or switch types); match IP or display name (label / hostname)
+    // Terminal now has one SSH connection model. Include legacy organization
+    // and switch endpoints in the same flat list, normalized as personal SSH.
     const personalStmt = db.prepare(`
         SELECT asset_ip as host, uuid, asset_type, label
         FROM t_assets
-        WHERE asset_type IN ('person', 'person-switch-cisco', 'person-switch-huawei')
-          AND (asset_ip LIKE ? OR IFNULL(label, '') LIKE ?)
+        WHERE asset_ip LIKE ? OR IFNULL(label, '') LIKE ?
         GROUP BY asset_ip, uuid, asset_type, label
+        ORDER BY label, asset_ip
+        LIMIT ?
       `)
-    const personalResults = personalStmt.all(searchPattern, searchPattern) || []
+    const personalResults = personalStmt.all(searchPattern, searchPattern, maxItems) || []
 
-    // Step 2: Query bastion host nodes (organization types - dynamically)
-    const jumpserverStmt = db.prepare(`
-        SELECT uuid, asset_ip as host, asset_type, label
-        FROM t_assets
-        WHERE asset_type IN (${orgTypePlaceholders})
-      `)
-    const jumpserverResults = jumpserverStmt.all(...orgTypes) || []
-
-    // Step 3: Query jumpserver child assets with optional search filter (IP, bastion remark, hostname, comment)
-    const orgAssetsStmt = db.prepare(`
-        SELECT
-          oa.uuid as asset_uuid,
-          oa.host,
-          oa.organization_uuid,
-          oa.jump_server_type as connection_type,
-          oa.bastion_comment,
-          oa.hostname,
-          oa.comment
-        FROM t_organization_assets oa
-        JOIN t_assets a ON oa.organization_uuid = a.uuid
-        WHERE oa.host LIKE ?
-          OR IFNULL(oa.bastion_comment, '') LIKE ?
-          OR IFNULL(oa.hostname, '') LIKE ?
-          OR IFNULL(oa.comment, '') LIKE ?
-      `)
-    const orgAssetResults = orgAssetsStmt.all(searchPattern, searchPattern, searchPattern, searchPattern) || []
-
-    // Step 4: Build tree structure
-
-    // Format personal assets
     const personalData = personalResults.map((item: any) => ({
       key: `personal_${item.uuid}`,
       label: item.host,
@@ -208,96 +144,15 @@ export function getUserHostsLogic(db: Database.Database, search: string, limit: 
       selectable: true,
       uuid: item.uuid,
       connection: 'person',
-      assetType: item.asset_type
+      assetType: 'person'
     }))
-
-    // Group org assets by organization_uuid
-    const orgAssetsMap = new Map<string, any[]>()
-    for (const asset of orgAssetResults) {
-      const orgUuid = (asset as any).organization_uuid
-      if (!orgAssetsMap.has(orgUuid)) {
-        orgAssetsMap.set(orgUuid, [])
-      }
-      orgAssetsMap.get(orgUuid)!.push(asset)
-    }
-
-    // Build bastion host tree nodes
-    const bastionData = (jumpserverResults as any[])
-      .filter((js: any) => {
-        // Include bastion host if it has matching children or no search term
-        return !safeSearch || orgAssetsMap.has(js.uuid)
-      })
-      .map((js: any) => {
-        // Determine connection type based on asset_type (generalized)
-        const connectionType = extractBastionType(js.asset_type)
-        return {
-          key: `bastion_${js.uuid}`,
-          label: js.host,
-          title: buildBastionParentTitle(js.label, js.host),
-          type: 'bastion',
-          selectable: false,
-          uuid: js.uuid,
-          connection: js.asset_type, // Keep original asset_type as connection identifier
-          assetType: js.asset_type,
-          children: (orgAssetsMap.get(js.uuid) || []).map((child: any) => ({
-            key: `bastion_${js.uuid}_${child.asset_uuid}`,
-            label: child.host,
-            title: buildOrganizationAssetSearchTitle(child),
-            type: 'bastion_child',
-            selectable: true,
-            uuid: child.asset_uuid,
-            connection: child.connection_type || connectionType,
-            organizationUuid: js.uuid
-          }))
-        }
-      })
-      .filter((js: any) => js.children.length > 0) // Only include bastion hosts with children
-
-    // Calculate total count
-    const childrenCount = bastionData.reduce((sum: number, js: any) => sum + js.children.length, 0)
-    const total = personalData.length + bastionData.length + childrenCount
-
-    // Step 5: Apply maxItems limit while keeping tree integrity
-    const trimmedPersonal: any[] = []
-    let remaining = maxItems
-
-    for (const p of personalData) {
-      if (remaining <= 0) break
-      trimmedPersonal.push(p)
-      remaining -= 1
-    }
-
-    const trimmedBastions: any[] = []
-
-    for (const js of bastionData) {
-      if (remaining <= 1) break // need at least space for parent + one child
-
-      const availableForChildren = remaining - 1
-      const children: any[] = []
-      for (const child of js.children) {
-        if (children.length >= availableForChildren) break
-        children.push(child)
-      }
-
-      if (children.length === 0) {
-        continue
-      }
-
-      trimmedBastions.push({
-        ...js,
-        children
-      })
-
-      remaining -= 1 + children.length
-      if (remaining <= 0) break
-    }
 
     return {
       data: {
-        personal: trimmedPersonal,
-        jumpservers: trimmedBastions
+        personal: personalData,
+        jumpservers: []
       },
-      total: total > maxItems ? maxItems : total,
+      total: personalData.length,
       hasMore: false // No pagination; rely on search to narrow results
     }
   } catch (error) {

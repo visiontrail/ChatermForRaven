@@ -182,7 +182,7 @@ describe('Extensions index.vue', () => {
     await nextTick()
     await nextTick()
 
-    expect(wrapper.text()).toContain('Jumpserver Support')
+    expect(wrapper.text()).not.toContain('Jumpserver Support')
     expect(wrapper.text()).toContain('Alias')
     expect(wrapper.text()).toContain('Plugin A')
   })

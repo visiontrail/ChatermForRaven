@@ -4,22 +4,6 @@
   </div>
   <div class="term_host_list">
     <div class="term_host_header">
-      <div class="workspace-tabs-container">
-        <a-tabs
-          v-model:active-key="company"
-          type="card"
-          size="small"
-          class="workspace-tabs"
-          @change="handleTabChange"
-        >
-          <a-tab-pane
-            v-for="item in workspaceData"
-            :key="item.key"
-            :tab="t(item.label)"
-          />
-        </a-tabs>
-      </div>
-
       <div style="width: 100%; margin-top: 4px">
         <div class="manage">
           <a-input
@@ -50,183 +34,49 @@
         </div>
 
         <div class="tree-container">
-          <div v-show="company === 'personal_user_id'">
-            <a-tree
-              v-model:selected-keys="selectedKeys"
-              v-model:expanded-keys="expandedKeys"
-              :tree-data="assetTreeData"
-              :field-names="{ children: 'children', title: 'title', key: 'key' }"
-              class="dark-tree"
-              @select="handleSelect"
-              @expand="onTreeExpand"
-            >
-              <template #title="{ title, dataRef }">
-                <div class="custom-tree-node">
-                  <span
-                    v-if="!isSecondLevel(dataRef)"
-                    class="title-with-icon"
-                    @click="handleFolderRowClick($event, dataRef)"
-                  >
-                    <span v-if="editingNode !== dataRef.key">
-                      {{ title }}
-                      <span
-                        v-if="!isSecondLevel(dataRef) && getOriginalChildrenCount(dataRef) > 0"
-                        class="child-count"
-                      >
-                        ({{ getOriginalChildrenCount(dataRef) }})
-                      </span>
-                    </span>
-                  </span>
-                  <span
-                    v-else-if="editingNode !== dataRef.key && commentNode !== dataRef.key"
-                    class="title-with-icon"
-                    draggable="true"
-                    :class="{ selected: selectedKeys.includes(dataRef.key) }"
-                    @dragstart="onAssetDragStart($event, dataRef)"
-                    @dragend="onAssetDragEnd"
-                    @click="handleClick(dataRef)"
-                    @dblclick="handleDblClick(dataRef)"
-                    @contextmenu="handleContextMenu($event, dataRef)"
-                  >
-                    <folder-outlined class="computer-icon" />
-                    <span class="hostname-text">{{ getDisplayText(dataRef, title) }}</span>
-
-                    <div
-                      v-if="commentNode === dataRef.key"
-                      class="comment-edit-container"
-                    >
-                      <a-input
-                        v-model:value="editingComment"
-                        :placeholder="t('personal.commentPlaceholder')"
-                        size="small"
-                        @keyup.enter="saveComment(dataRef)"
-                        @keyup.esc="cancelComment"
-                      />
-                      <CheckOutlined
-                        class="confirm-icon"
-                        @click="saveComment(dataRef)"
-                      />
-                      <CloseOutlined
-                        class="cancel-icon"
-                        @click="cancelComment"
-                      />
-                    </div>
+          <a-tree
+            v-model:selected-keys="selectedKeys"
+            v-model:expanded-keys="expandedKeys"
+            :tree-data="assetTreeData"
+            :field-names="{ children: 'children', title: 'title', key: 'key' }"
+            class="dark-tree"
+            @select="handleSelect"
+            @expand="onTreeExpand"
+          >
+            <template #title="{ title, dataRef }">
+              <div class="custom-tree-node">
+                <span
+                  v-if="!isSecondLevel(dataRef)"
+                  class="title-with-icon"
+                  @click="handleFolderRowClick($event, dataRef)"
+                >
+                  <span v-if="editingNode !== dataRef.key">
+                    {{ title }}
                     <span
-                      v-if="dataRef.comment && editingNode !== dataRef.key && commentNode !== dataRef.key"
-                      class="comment-text"
-                      :title="dataRef.comment"
+                      v-if="getOriginalChildrenCount(dataRef) > 0"
+                      class="child-count"
                     >
-                      ({{ dataRef.comment }})
+                      ({{ getOriginalChildrenCount(dataRef) }})
                     </span>
                   </span>
-                </div>
-              </template>
-            </a-tree>
-          </div>
-          <div v-show="company !== 'personal_user_id'">
-            <a-tree
-              v-model:selected-keys="selectedKeys"
-              v-model:expanded-keys="expandedKeys"
-              :tree-data="enterpriseData"
-              :field-names="{ children: 'children', title: 'title', key: 'key' }"
-              class="dark-tree"
-              @select="handleSelect"
-              @expand="onTreeExpand"
-            >
-              <template #title="{ title, dataRef }">
-                <div class="custom-tree-node">
-                  <span
-                    v-if="!isSecondLevel(dataRef)"
-                    class="title-with-icon"
-                    @click="handleFolderRowClick($event, dataRef)"
-                    @contextmenu="handleContextMenu($event, dataRef)"
-                  >
-                    <span v-if="editingNode !== dataRef.key">
-                      {{ title }}
-                      <span
-                        v-if="!isSecondLevel(dataRef) && getOriginalChildrenCount(dataRef) > 0"
-                        class="child-count"
-                      >
-                        ({{ getOriginalChildrenCount(dataRef) }})
-                      </span>
-                    </span>
-                  </span>
-                  <span
-                    v-else-if="editingNode !== dataRef.key && commentNode !== dataRef.key"
-                    class="title-with-icon"
-                    draggable="true"
-                    :class="{ selected: selectedKeys.includes(dataRef.key) }"
-                    @dragstart="onAssetDragStart($event, dataRef)"
-                    @dragend="onAssetDragEnd"
-                    @click="handleClick(dataRef)"
-                    @dblclick="handleDblClick(dataRef)"
-                    @contextmenu="handleContextMenu($event, dataRef)"
-                  >
-                    <folder-outlined class="computer-icon" />
-                    <span class="hostname-text">{{ getDisplayText(dataRef, title) }}</span>
-                    <span
-                      v-if="dataRef.comment"
-                      class="comment-text"
-                      :title="dataRef.comment"
-                    >
-                      ({{ dataRef.comment }})
-                    </span>
-                  </span>
-                  <!-- Comment edit input -->
-                  <span
-                    v-else-if="commentNode === dataRef.key"
-                    class="title-with-icon"
-                  >
-                    <folder-outlined class="computer-icon" />
-                    <span class="hostname-text">{{ getDisplayText(dataRef, title) }}</span>
-                    <div class="comment-edit-container">
-                      <a-input
-                        v-model:value="editingComment"
-                        :placeholder="t('personal.commentPlaceholder')"
-                        size="small"
-                        @keyup.enter="saveComment(dataRef)"
-                        @keyup.esc="cancelComment"
-                      />
-                      <CheckOutlined
-                        class="confirm-icon"
-                        @click="saveComment(dataRef)"
-                      />
-                      <CloseOutlined
-                        class="cancel-icon"
-                        @click="cancelComment"
-                      />
-                    </div>
-                  </span>
-                  <div
-                    v-if="
-                      !isSecondLevel(dataRef) &&
-                      !dataRef.key.startsWith('common_') &&
-                      editingNode !== dataRef.key &&
-                      company !== 'personal_user_id' &&
-                      dataRef.title !== t('common.favoriteBar') &&
-                      dataRef.asset_type !== 'custom_folder'
-                    "
-                    class="refresh-icon"
-                  >
-                    <a-tooltip :title="$t('common.refresh')">
-                      <a-button
-                        type="primary"
-                        size="small"
-                        ghost
-                        class="refresh-button"
-                        :loading="refreshingNode === dataRef.key"
-                        @click="handleRefresh(dataRef)"
-                      >
-                        <template #icon>
-                          <RedoOutlined />
-                        </template>
-                      </a-button>
-                    </a-tooltip>
-                  </div>
-                </div>
-              </template>
-            </a-tree>
-          </div>
+                </span>
+                <span
+                  v-else-if="editingNode !== dataRef.key"
+                  class="title-with-icon"
+                  draggable="true"
+                  :class="{ selected: selectedKeys.includes(dataRef.key) }"
+                  @dragstart="onAssetDragStart($event, dataRef)"
+                  @dragend="onAssetDragEnd"
+                  @click="handleClick(dataRef)"
+                  @dblclick="handleDblClick(dataRef)"
+                  @contextmenu="handleContextMenu($event, dataRef)"
+                >
+                  <folder-outlined class="computer-icon" />
+                  <span class="hostname-text">{{ getDisplayText(dataRef, title) }}</span>
+                </span>
+              </div>
+            </template>
+          </a-tree>
         </div>
       </div>
     </div>
@@ -394,38 +244,22 @@
 <script setup lang="ts">
 import { deepClone } from '@/utils/util'
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
-import {
-  StarFilled,
-  StarOutlined,
-  SearchOutlined,
-  RedoOutlined,
-  EditOutlined,
-  CheckOutlined,
-  CloseOutlined,
-  FolderOutlined,
-  DeleteOutlined,
-  SwapOutlined
-} from '@ant-design/icons-vue'
+import { StarFilled, StarOutlined, SearchOutlined, EditOutlined, FolderOutlined, DeleteOutlined, SwapOutlined } from '@ant-design/icons-vue'
 import eventBus from '@/utils/eventBus'
-import { refreshOrganizationAssetFromWorkspace } from '../LeftTab/components/refreshOrganizationAssets'
 import { isOrganizationAsset } from '../LeftTab/utils/types'
 import { userConfigStore } from '@/services/userConfigStoreService'
 import { message, Modal, Input, Button } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 const api = (window as any).api
-const { t: $t } = useI18n()
 const { t } = useI18n()
 const emit = defineEmits(['currentClickServer', 'change-company', 'open-user-tab', 'files-open-sftp-by-asset-node'])
 const logger = createRendererLogger('files')
 
-const company = ref('personal_user_id')
 const selectedKeys = ref<string[]>([])
 const expandedKeys = ref<string[]>([])
 const searchValue = ref('')
 const searchInputRef = ref()
 const editingNode = ref(null)
-const editingTitle = ref('')
-const refreshingNode = ref(null)
 const editingComment = ref('')
 const commentNode = ref(null)
 const showCreateFolderModal = ref(false)
@@ -447,24 +281,6 @@ const contextMenuData = ref<any>(null)
 const contextMenuStyle = ref({})
 const showIpMode = ref(false)
 
-interface WorkspaceItem {
-  key: string
-  label: string
-  type: string
-}
-const workspaceData = ref<WorkspaceItem[]>([
-  {
-    key: 'personal_user_id',
-    label: 'personal.personal',
-    type: 'personal'
-  },
-  {
-    key: 'remote',
-    label: 'personal.enterprise',
-    type: 'organization'
-  }
-])
-
 interface AssetNode {
   key: string
   title: string
@@ -474,32 +290,12 @@ interface AssetNode {
 }
 const originalTreeData = ref<AssetNode[]>([])
 const assetTreeData = ref<AssetNode[]>([])
-const enterpriseData = ref<AssetNode[]>([])
 interface MachineOption {
   value: any
   label: string
 }
 
 const machines = ref<MachineOption | null>(null)
-
-const companyChange = (item) => {
-  company.value = item.key
-  // Reset tree-related state
-  selectedKeys.value = []
-  expandedKeys.value = []
-  searchValue.value = ''
-  editingNode.value = null
-  editingTitle.value = ''
-  // Close context menu when changing workspace
-  contextMenuVisible.value = false
-  contextMenuData.value = null
-  if (isPersonalWorkspace.value) {
-    getLocalAssetMenu()
-  } else {
-    loadCustomFolders()
-    getUserAssetMenu()
-  }
-}
 
 // Handle expand/collapse state changes and save to user config
 const handleExpandChange = async (expandedKeys: any[]) => {
@@ -535,21 +331,7 @@ const loadSavedExpandState = async () => {
   }
 }
 
-const handleTabChange = (activeKey: string | number) => {
-  // Close context menu when switching tabs
-  contextMenuVisible.value = false
-  contextMenuData.value = null
-
-  const item = workspaceData.value.find((item) => item.key === activeKey)
-  if (item) {
-    companyChange(item)
-  }
-}
-
-const isPersonalWorkspace = computed(() => {
-  const currentWorkspace = workspaceData.value.find((item) => item.key === company.value)
-  return currentWorkspace?.type === 'personal'
-})
+const isPersonalWorkspace = computed(() => true)
 const handleFavoriteClick = (dataRef: any) => {
   // Check if necessary fields exist
   if (!dataRef) {
@@ -592,7 +374,7 @@ const getUserAssetMenu = () => {
       if (res && res.data) {
         const data = res.data.routers || []
         originalTreeData.value = deepClone(data) as AssetNode[]
-        enterpriseData.value = deepClone(data) as AssetNode[]
+        assetTreeData.value = deepClone(data) as AssetNode[]
         setTimeout(async () => {
           await expandDefaultNodes()
         }, 200)
@@ -645,13 +427,8 @@ const onSearchInput = () => {
   contextMenuVisible.value = false
   contextMenuData.value = null
 
-  if (isPersonalWorkspace.value) {
-    assetTreeData.value = filterTreeNodes(searchValue.value)
-    expandedKeys.value = getAllKeys(assetTreeData.value)
-  } else {
-    enterpriseData.value = filterTreeNodes(searchValue.value)
-    expandedKeys.value = getAllKeys(enterpriseData.value)
-  }
+  assetTreeData.value = filterTreeNodes(searchValue.value)
+  expandedKeys.value = getAllKeys(assetTreeData.value)
 }
 
 const focusSearchInput = async () => {
@@ -873,57 +650,9 @@ const onAssetDragEnd = (_e: DragEvent) => {
   // noop
 }
 
-const handleRefresh = async (dataRef: any) => {
-  refreshingNode.value = dataRef.key
-
-  try {
-    await refreshOrganizationAssetFromWorkspace(dataRef, () => {
-      getUserAssetMenu()
-    })
-  } catch (error) {
-    logger.error('Error refresh', { error: error })
-    getUserAssetMenu()
-  } finally {
-    setTimeout(() => {
-      refreshingNode.value = null
-    }, 800)
-  }
-}
-
 const handleCommentClick = (dataRef: any) => {
   commentNode.value = dataRef.key
   editingComment.value = dataRef.comment || ''
-}
-
-const saveComment = async (dataRef: any) => {
-  try {
-    if (!api.updateOrganizationAssetComment) {
-      return
-    }
-
-    const result = await api.updateOrganizationAssetComment({
-      organizationUuid: dataRef.organizationId,
-      host: dataRef.ip,
-      comment: editingComment.value
-    })
-
-    if (result && result.data && result.data.message === 'success') {
-      dataRef.comment = editingComment.value
-      commentNode.value = null
-      editingComment.value = ''
-      // Refresh menu to show updates
-      getUserAssetMenu()
-    } else {
-      logger.error('Comment save failed')
-    }
-  } catch (error) {
-    logger.error('Save comment error', { error: error })
-  }
-}
-
-const cancelComment = () => {
-  commentNode.value = null
-  editingComment.value = ''
 }
 
 const loadCustomFolders = async () => {

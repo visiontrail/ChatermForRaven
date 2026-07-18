@@ -59,7 +59,7 @@
                   </div>
 
                   <a-tag
-                    v-if="['Jumpserver Support', 'Alias'].includes(item.name)"
+                    v-if="item.name === 'Alias'"
                     class="right-tag"
                   >
                     {{ $t('extensions.system') }}
@@ -235,8 +235,7 @@ const handleSelect = (item) => {
   const { key } = item
 
   const specialRoutes = {
-    Alias: 'aliasConfig',
-    jumpserverSupport: 'jumpserverSupport'
+    Alias: 'aliasConfig'
   }
 
   if (specialRoutes[key]) {
@@ -399,21 +398,6 @@ watch(
 // Used for rendering list：Alias + pluginList
 const list = computed<DisplayPluginItem[]>(() => {
   const base: DisplayPluginItem[] = [
-    {
-      name: 'Jumpserver Support',
-      description: t('extensions.jumpserverSupport.jmsPluginDesc'),
-      iconKey: 'jumpserver.svg',
-      iconUrl: '',
-      tabName: 'jumpserverSupport',
-      show: true,
-      isPlugin: false,
-      pluginId: 'jumpserverSupport',
-      installed: false,
-      hasUpdate: false,
-      isDraggedOnly: false,
-      installedVersion: '',
-      latestVersion: ''
-    },
     {
       name: 'Alias',
       description: t('extensions.aliasDescription'),

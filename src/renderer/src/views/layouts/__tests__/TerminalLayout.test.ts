@@ -450,6 +450,16 @@ describe('TerminalLayout - Dockview Tabs Overflow', () => {
   })
 })
 
+describe('TerminalLayout - Identity Watermark', () => {
+  it('should render no identity watermark for embedded or guest sessions', () => {
+    const sourcePath = join(process.cwd(), 'src/renderer/src/views/layouts/TerminalLayout.vue')
+    const source = readFileSync(sourcePath, 'utf8')
+    expect(source).toContain('const isEmbedded = isChatermEmbedded()')
+    expect(source).toContain('if (!showWatermark.value || isEmbedded || isSkippedLogin.value)')
+    expect(source).not.toContain("return ['Guest User']")
+  })
+})
+
 describe('TerminalLayout - Preview Actions Layout', () => {
   it('should reserve right padding for preview actions overlay', () => {
     const sourcePath = join(process.cwd(), 'src/renderer/src/views/layouts/TerminalLayout.vue')

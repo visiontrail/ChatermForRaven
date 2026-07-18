@@ -60,13 +60,6 @@ vi.mock('@views/components/Extensions/aliasConfig.vue', () => ({
   }
 }))
 
-vi.mock('@views/components/Extensions/jumpserverSupport.vue', () => ({
-  default: {
-    name: 'JumpserverSupport',
-    template: '<div class="jumpserver-support-mock">Jumpserver Support</div>'
-  }
-}))
-
 vi.mock('@views/components/Kubernetes/index.vue', () => ({
   default: {
     name: 'Kubernetes',
@@ -350,9 +343,9 @@ describe('TabsPanel Component', () => {
       expect(wrapper.html()).toContain('Alias Config')
     })
 
-    it('should render JumpserverSupport when content is jumpserverSupport', () => {
+    it('should not render the removed Jumpserver support view', () => {
       wrapper = createWrapper({ content: 'jumpserverSupport', organizationId: '' })
-      expect(wrapper.html()).toContain('Jumpserver Support')
+      expect(wrapper.html()).not.toContain('Jumpserver Support')
     })
 
     it('should render McpConfigEditor when content is mcpConfigEditor', () => {

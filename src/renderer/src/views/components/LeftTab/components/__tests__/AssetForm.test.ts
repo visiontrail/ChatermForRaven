@@ -182,6 +182,40 @@ describe('AssetForm Validation', () => {
     wrapper?.unmount()
   })
 
+  describe('generic SSH connection model', () => {
+    it('does not render device, bastion, switch, or brand selectors', async () => {
+      wrapper = createWrapper()
+      await nextTick()
+
+      expect(wrapper.find('.a-cascader').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('Device Category')
+      expect(wrapper.text()).not.toContain('Bastion Host')
+      expect(wrapper.text()).not.toContain('Switch')
+      expect(wrapper.text()).not.toContain('Cisco')
+      expect(wrapper.text()).not.toContain('Huawei')
+    })
+
+    it.each(['organization', 'organization-qizhi', 'person-switch-cisco'])(
+      'normalizes legacy asset type %s to a personal SSH connection on submit',
+      async (assetType) => {
+        wrapper = createWrapper({
+          initialData: {
+            ip: '192.168.1.1',
+            port: 22,
+            username: 'root',
+            password: 'secret',
+            auth_type: 'password',
+            asset_type: assetType
+          }
+        })
+        await nextTick()
+        await clickSubmit(wrapper)
+
+        expect(wrapper.emitted('submit')?.[0]?.[0]).toMatchObject({ asset_type: 'person' })
+      }
+    )
+  })
+
   describe('required field validation on submit', () => {
     it('should not emit submit when IP is empty', async () => {
       wrapper = createWrapper({

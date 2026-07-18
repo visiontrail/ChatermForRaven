@@ -1,34 +1,11 @@
 <template>
   <div
     ref="fileElement"
-    class="tree-container"
-    :class="{ 'is-transfer': uiMode === 'transfer' && treeData && treeData.length >= 1, 'is-resizing': isResizing }"
+    class="tree-container is-transfer"
+    :class="{ 'is-resizing': isResizing }"
   >
-    <div
-      v-if="treeData && treeData.length >= 1"
-      class="mode-switch"
-    >
-      <a-radio-group
-        :value="uiModeView"
-        size="small"
-        button-style="solid"
-        @update:value="onModeChange"
-      >
-        <a-radio-button
-          class="mode-radio"
-          value="transfer"
-          >{{ t('files.dragTransferMode') }}</a-radio-button
-        >
-        <a-radio-button
-          class="mode-radio"
-          value="default"
-          >{{ t('files.defaultMode') }}</a-radio-button
-        >
-      </a-radio-group>
-    </div>
-
-    <!--Transfer mode-->
-    <template v-if="uiMode === 'transfer' && treeData">
+    <!-- Drag-and-drop transfer mode -->
+    <template v-if="treeData">
       <div
         ref="transferLayoutRef"
         class="transfer-layout"
@@ -304,57 +281,6 @@
 
       <!-- Add connection modal -->
     </template>
-
-    <!-- Default mode -->
-    <template v-else>
-      <a-tree
-        v-if="treeData && treeData.length"
-        v-model:expanded-keys="expandedKeys"
-        class="dark-tree"
-        block-node
-        :tree-data="treeData"
-        :default-expand-all="true"
-      >
-        <template #title="{ dataRef }">
-          <div>
-            <span style="font-weight: bold; color: var(--text-color)">{{ dataRef.title }}</span>
-            <span
-              v-if="dataRef.errorMsg"
-              style="color: red; margin-left: 10px; font-weight: bold"
-            >
-              {{ t('files.sftpConnectFailed') }}：{{ dataRef.errorMsg }}
-            </span>
-            <div v-if="dataRef.expanded || expandedKeys.includes(dataRef.key)">
-              <TermFileSystem
-                :uuid="dataRef.rawId || dataRef.value"
-                :current-directory-input="resolvePaths(dataRef.rawId || dataRef.value)"
-                :base-path="getBasePath(dataRef.rawId || dataRef.value)"
-                :cached-state="FS_CACHE.get(dataRef.rawId || dataRef.value)?.cache"
-                @open-file="openFile"
-                @state-change="stateChange"
-                @cross-transfer="handleCrossTransfer"
-              />
-            </div>
-          </div>
-        </template>
-      </a-tree>
-
-      <div
-        v-else
-        class="empty-state"
-      >
-        <div class="empty-icon">
-          <img
-            :src="fileIcon"
-            alt="File Icon"
-            style="width: 48px; height: 48px; opacity: 0.5"
-          />
-        </div>
-        <div class="empty-text">
-          {{ t('files.noDataAvailable') }}
-        </div>
-      </div>
-    </template>
   </div>
 
   <div
@@ -515,7 +441,6 @@ import eventBus from '../../../utils/eventBus'
 import { userConfigStore } from '@/services/userConfigStoreService'
 import { ensureTransferListener } from './fileTransfer'
 import TransferPanel from './fileTransferProgress.vue'
-import fileIcon from '@/assets/menu/files.svg'
 import { CheckOutlined, CloseOutlined, DownOutlined, PlusOutlined, RightOutlined } from '@ant-design/icons-vue'
 import { hostLabelOrTitleMatches } from '@/views/components/AiTab/utils'
 
@@ -889,7 +814,7 @@ onMounted(async () => {
   }
   await listUserSessions()
 
-  if (uiMode.value === 'transfer' && selectedRightUuid.value === makeLocalId('right')) {
+  if (selectedRightUuid.value === makeLocalId('right')) {
     ensureSessionState(makeLocalId('right'))
     collapsedState[makeLocalId('right')] = false
     openSession(makeLocalId('right'))
@@ -916,7 +841,6 @@ onBeforeUnmount(() => {
   cleanupSplitListeners()
 })
 const api = (window as any).api
-const expandedKeys = ref<string[]>([])
 // Editor binding
 const activeEditorKey = ref(null)
 const handleFocusEditor = (key) => {
@@ -1012,7 +936,6 @@ const listUserSessions = async () => {
 
 const objectToTreeData = (obj: object): any[] => {
   return Object.entries(obj).map(([key, value]: any) => {
-    const keys: string[] = []
     const isActive = currentActiveTerminal.value && currentActiveTerminal.value.ip === key
 
     const node = {
@@ -1025,17 +948,12 @@ const objectToTreeData = (obj: object): any[] => {
       isLeaf: false,
       class: isActive ? 'active-terminal' : ''
     }
-    if (keys.length < 1) {
-      keys.push(key)
-      expandedKeys.value = keys
-    }
     return node
   })
 }
 
 const treeData = ref<TreeProps['treeData']>([])
 
-type UiMode = 'default' | 'transfer'
 type PanelSide = 'left' | 'right'
 
 const FILES_DRAG_MIME = 'application/x-asset-sftp'
@@ -1311,19 +1229,6 @@ const handleEmptyDrop = async (e: DragEvent, side: PanelSide) => {
   await refreshAfterSelect(localId)
 }
 
-const uiMode = ref<UiMode>('transfer')
-
-const uiModeView = ref(uiMode.value)
-
-const onModeChange = async (val: 'default' | 'transfer') => {
-  uiModeView.value = val
-  await nextTick()
-
-  await new Promise<void>((r) => requestAnimationFrame(() => r()))
-
-  uiMode.value = val
-}
-
 // Transfer mode: per-session collapse + lazy mount (avoid fetching for collapsed trees) ---
 const collapsedState = reactive<Record<string, boolean>>({})
 const openedState = reactive<Record<string, boolean>>({})
@@ -1385,7 +1290,6 @@ const cleanupSplitListeners = () => {
 }
 
 const onTransferResizeMouseDown = (e: MouseEvent) => {
-  if (uiMode.value !== 'transfer') return
   const el = transferLayoutRef.value
   if (!el) return
 
@@ -1975,14 +1879,6 @@ watch(addConnVisible, (open) => {
   }
 })
 
-const isTransferAvailable = computed(() => ((treeData.value as any[]) || []).length >= 1)
-
-watch(isTransferAvailable, (ok) => {
-  if (!ok) {
-    uiMode.value = 'default'
-  }
-})
-
 // Keep selections valid + unique when sessions update
 watch(
   treeData,
@@ -2011,24 +1907,6 @@ watch(
     if (selectedRightUuid.value) openSession(String(selectedRightUuid.value))
   },
   { deep: true, immediate: true }
-)
-
-watch(
-  uiMode,
-  (m) => {
-    if (m === 'transfer') {
-      // make sure selected sessions are mounted/opened
-      if (selectedLeftUuid.value) {
-        ensureSessionState(String(selectedLeftUuid.value))
-        openSession(String(selectedLeftUuid.value))
-      }
-      if (selectedRightUuid.value) {
-        ensureSessionState(String(selectedRightUuid.value))
-        openSession(String(selectedRightUuid.value))
-      }
-    }
-  },
-  { immediate: true }
 )
 
 // Cross-panel file transfer (triggered by TermFileSystem DnD)
@@ -2524,20 +2402,6 @@ defineExpose({
 
 :deep(.active-terminal:hover) {
   background-color: var(--primary-color) !important;
-}
-
-.mode-switch {
-  padding: 10px 0px 0px 10px;
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  background: var(--bg-color);
-}
-
-.mode-radio {
-  background: var(--bg-color-secondary);
-  color: var(--text-color);
-  border-color: var(--border-color-light);
 }
 
 .transfer-layout {

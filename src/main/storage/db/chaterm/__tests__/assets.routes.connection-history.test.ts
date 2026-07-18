@@ -383,4 +383,57 @@ describe('getLocalAssetRouteLogic - recent connections', () => {
     const recentRouter = result.data.routers.find((r: any) => r.key === 'recent_connections')
     expect(recentRouter).toBeUndefined()
   })
+
+  it('should expose legacy bastion and switch endpoints as regular personal SSH assets', async () => {
+    const legacyRows = [
+      {
+        label: 'legacy-bastion',
+        asset_ip: '10.0.0.10',
+        uuid: 'legacy-org',
+        group_name: 'Legacy',
+        auth_type: 'password',
+        port: 22,
+        username: 'root',
+        password: 'secret',
+        key_chain_id: 0,
+        asset_type: 'organization-qizhi',
+        favorite: 0,
+        need_proxy: 0,
+        proxy_name: ''
+      },
+      {
+        label: 'legacy-switch',
+        asset_ip: '10.0.0.11',
+        uuid: 'legacy-switch',
+        group_name: 'Legacy',
+        auth_type: 'password',
+        port: 22,
+        username: 'admin',
+        password: 'secret',
+        key_chain_id: 0,
+        asset_type: 'person-switch-cisco',
+        favorite: 0,
+        need_proxy: 0,
+        proxy_name: ''
+      }
+    ]
+
+    const legacyPrepareMock = vi.fn((sql: string) => {
+      if (sql.includes('PRAGMA table_info')) return { all: () => [{ name: 'comment' }] }
+      if (sql.includes('SELECT name FROM sqlite_master')) return { get: () => ({ name: 'exists' }) }
+      if (sql.includes('t_connection_history')) return { all: () => [] }
+      if (sql.includes('favorite = 1')) return { all: () => [] }
+      if (sql.includes('SELECT DISTINCT group_name')) return { all: () => [{ group_name: 'Legacy' }] }
+      if (sql.includes('WHERE group_name = ?')) return { all: () => legacyRows }
+      return { all: () => [], get: () => undefined, run: () => ({ changes: 0 }) }
+    })
+
+    const { getLocalAssetRouteLogic } = await import('../assets.routes')
+    const result = await getLocalAssetRouteLogic({ prepare: legacyPrepareMock } as any, 'tree', ['person'])
+    const legacyGroup = result.data.routers.find((router: any) => router.key === 'Legacy')
+
+    expect(legacyGroup.children).toHaveLength(2)
+    expect(legacyGroup.children.map((asset: any) => asset.asset_type)).toEqual(['person', 'person'])
+    expect(legacyGroup.children.map((asset: any) => asset.organizationId)).toEqual(['personal', 'personal'])
+  })
 })

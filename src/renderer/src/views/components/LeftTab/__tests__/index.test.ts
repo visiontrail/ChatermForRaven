@@ -2,6 +2,11 @@ import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import LeftTab from '../index.vue'
 import { menuTabsData } from '../constants/data'
+import { isChatermEmbedded } from '@/utils/embedded'
+
+vi.mock('@/utils/embedded', () => ({
+  isChatermEmbedded: vi.fn(() => false)
+}))
 
 vi.mock('@/utils/permission', () => ({
   removeToken: vi.fn()
@@ -66,6 +71,7 @@ vi.mock('@/utils/convertFileLocalResourceSrc', () => ({
 describe('LeftTab', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(isChatermEmbedded).mockReturnValue(false)
     ;(globalThis as any).createRendererLogger = vi.fn(() => ({
       info: vi.fn(),
       warn: vi.fn(),
@@ -80,6 +86,29 @@ describe('LeftTab', () => {
 
   it('includes database in menuTabsData', () => {
     expect(menuTabsData.some((item) => item.key === 'database')).toBe(true)
+  })
+
+  it('hides the knowledge center menu when embedded in Raven', () => {
+    vi.mocked(isChatermEmbedded).mockReturnValue(true)
+
+    const wrapper = mount(LeftTab, {
+      global: {
+        stubs: {
+          'a-tooltip': {
+            template: '<div><slot /></div>'
+          }
+        },
+        mocks: {
+          $t: (key: string) => key
+        }
+      }
+    })
+
+    const knowledgeIcon = menuTabsData.find((item) => item.key === 'knowledgecenter')?.icon
+    const renderedMainMenuIcons = wrapper.findAll('.main-menu .term_menu img').map((item) => item.attributes('src'))
+
+    expect(knowledgeIcon).toBeTruthy()
+    expect(renderedMainMenuIcons).not.toContain(knowledgeIcon)
   })
 
   it('emits toggle-menu when database menu is clicked', async () => {

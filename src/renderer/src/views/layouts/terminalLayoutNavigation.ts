@@ -9,7 +9,6 @@ const dockBackedUserTabs = new Set([
   'mcpConfigEditor',
   'securityConfigEditor',
   'keywordHighlightEditor',
-  'jumpserverSupport',
   'aliasConfig',
   'k8sClusterConfig',
   'files'

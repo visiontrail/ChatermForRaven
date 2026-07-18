@@ -307,7 +307,7 @@ export async function getLocalAssetRouteLogic(db: Database, searchType: string, 
             key: group.group_name,
             title: group.group_name,
             children: assets.map((item: any) => ({
-              key: `${group.group_name}_${item.asset_ip || ''}`,
+              key: `${group.group_name}_${item.asset_ip || ''}_${item.uuid || ''}`,
               title: item.label || item.asset_ip || '',
               favorite: item.favorite === 1,
               ip: item.asset_ip || '',
@@ -319,8 +319,11 @@ export async function getLocalAssetRouteLogic(db: Database, searchType: string, 
               username: item.username || '',
               password: item.password || '',
               key_chain_id: item.key_chain_id || 0,
-              asset_type: item.asset_type || 'person',
-              organizationId: isOrganizationType(item.asset_type) ? item.uuid : 'personal',
+              // Terminal exposes every saved endpoint as a regular SSH connection.
+              // Keep legacy organization/switch rows readable without surfacing
+              // their retired UI categories.
+              asset_type: 'person',
+              organizationId: 'personal',
               needProxy: item.need_proxy === 1,
               proxyName: item.proxy_name
             }))
@@ -361,8 +364,8 @@ export async function getLocalAssetRouteLogic(db: Database, searchType: string, 
                 uuid: item.asset_uuid || '',
                 port: item.asset_port || 22,
                 username: item.asset_username || '',
-                asset_type: item.asset_type || 'person',
-                organizationId: item.organization_id || 'personal'
+                asset_type: 'person',
+                organizationId: 'personal'
               }))
             })
           }
@@ -371,9 +374,9 @@ export async function getLocalAssetRouteLogic(db: Database, searchType: string, 
         }
 
         const favoritesStmt = db.prepare(`
-          SELECT label, asset_ip, uuid, group_name,label,auth_type,port,username,password,key_chain_id,asset_type
+          SELECT label, asset_ip, uuid, group_name,label,auth_type,port,username,password,key_chain_id,asset_type,need_proxy,proxy_name
           FROM t_assets
-          WHERE favorite = 1 AND asset_type IN ('person', 'person-switch-cisco', 'person-switch-huawei')
+          WHERE favorite = 1
           ORDER BY created_at
         `)
         const favorites = favoritesStmt.all() || []
@@ -395,7 +398,7 @@ export async function getLocalAssetRouteLogic(db: Database, searchType: string, 
               username: item.username || '',
               password: item.password || '',
               key_chain_id: item.key_chain_id || 0,
-              asset_type: item.asset_type || 'person',
+              asset_type: 'person',
               organizationId: 'personal',
               needProxy: item.need_proxy === 1,
               proxyName: item.proxy_name
@@ -407,16 +410,16 @@ export async function getLocalAssetRouteLogic(db: Database, searchType: string, 
       const groupsStmt = db.prepare(`
         SELECT DISTINCT group_name
         FROM t_assets
-        WHERE group_name IS NOT NULL AND asset_type IN ('person', 'person-switch-cisco', 'person-switch-huawei')
+        WHERE group_name IS NOT NULL
         ORDER BY group_name
       `)
       const groups = groupsStmt.all() || []
 
       for (const group of groups) {
         const assetsStmt = db.prepare(`
-          SELECT label, asset_ip, uuid, group_name,label,auth_type,port,username,password,key_chain_id,asset_type,favorite
+          SELECT label, asset_ip, uuid, group_name,label,auth_type,port,username,password,key_chain_id,asset_type,favorite,need_proxy,proxy_name
           FROM t_assets
-          WHERE group_name = ? AND asset_type IN ('person', 'person-switch-cisco', 'person-switch-huawei')
+          WHERE group_name = ?
           ORDER BY created_at
         `)
         const assets = assetsStmt.all(group.group_name) || []
@@ -426,7 +429,7 @@ export async function getLocalAssetRouteLogic(db: Database, searchType: string, 
             key: group.group_name,
             title: group.group_name,
             children: assets.map((item: any) => ({
-              key: `${group.group_name}_${item.asset_ip || ''}_${item.username || 'no_user'}_${item.label || 'no_label'}`,
+              key: `${group.group_name}_${item.asset_ip || ''}_${item.username || 'no_user'}_${item.label || 'no_label'}_${item.uuid || ''}`,
               title: item.label || item.asset_ip || '',
               favorite: item.favorite === 1,
               ip: item.asset_ip || '',
@@ -438,7 +441,7 @@ export async function getLocalAssetRouteLogic(db: Database, searchType: string, 
               username: item.username || '',
               password: item.password || '',
               key_chain_id: item.key_chain_id || 0,
-              asset_type: item.asset_type || 'person',
+              asset_type: 'person',
               organizationId: 'personal',
               needProxy: item.need_proxy === 1,
               proxyName: item.proxy_name

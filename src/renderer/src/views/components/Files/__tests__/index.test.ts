@@ -225,14 +225,14 @@ describe('index.vue', () => {
     wrapper.unmount()
   })
 
-  it('mode switch: can switch to transfer mode', async () => {
+  it('uses drag-and-drop transfer mode without a mode switch', async () => {
     const wrapper = mountView()
     await flushPromises()
 
-    const vm = wrapper.vm as any
-    await vm.onModeChange?.('transfer')
-    await flushPromises()
-    expect(vm.uiMode).toBe('transfer')
+    expect(wrapper.find('.mode-switch').exists()).toBe(false)
+    expect(wrapper.find('.a-radio-group').exists()).toBe(false)
+    expect(wrapper.find('.transfer-layout').exists()).toBe(true)
+    expect(wrapper.find('.a-tree').exists()).toBe(false)
     wrapper.unmount()
   })
 

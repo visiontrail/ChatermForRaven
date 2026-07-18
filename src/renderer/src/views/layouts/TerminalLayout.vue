@@ -355,6 +355,7 @@ import { captureExtensionUsage, ExtensionNames, ExtensionStatus } from '@/utils/
 import Dashboard from '@renderer/views/components/Ssh/components/dashboard.vue'
 import { useAiSidebarModelRefresh } from './composables/useAiSidebarModelRefresh'
 import { isFocusInAiTab } from '@/utils/domUtils'
+import { isChatermEmbedded } from '@/utils/embedded'
 import { aiTabStorageKey, migrateLegacyAiTabStorage } from '@/views/components/AiTab/workspace'
 
 import 'dockview-vue/dist/styles/dockview.css'
@@ -391,16 +392,14 @@ const isTransparent = computed(() => !!configStore.getUserConfig.background.imag
 const headerRef = ref<InstanceType<typeof Header> | null>(null)
 const allTabs = ref<InstanceType<typeof TabsPanel> | null>(null)
 const assetsRef = ref<InstanceType<typeof Assets> | null>(null)
+const isEmbedded = isChatermEmbedded()
 const isSkippedLogin = computed(() => {
   return localStorage.getItem('login-skipped') === 'true'
 })
 const watermarkContent = reactive({
   content: computed(() => {
-    if (!showWatermark.value) {
+    if (!showWatermark.value || isEmbedded || isSkippedLogin.value) {
       return ['']
-    }
-    if (isSkippedLogin.value) {
-      return ['Guest User']
     }
     return [userInfoStore().userInfo.name, userInfoStore().userInfo.email]
   }),
@@ -2143,7 +2142,6 @@ const openUserTab = async function (arg: OpenUserTabArg) {
     value === 'mcpConfigEditor' ||
     value === 'securityConfigEditor' ||
     value === 'keywordHighlightEditor' ||
-    value === 'jumpserverSupport' ||
     value === 'aliasConfig' ||
     value === 'k8sClusterConfig' ||
     value === 'files' ||
@@ -2166,10 +2164,6 @@ const openUserTab = async function (arg: OpenUserTabArg) {
   switch (value) {
     case 'aliasConfig':
       p.title = 'alias'
-      p.type = 'extensions'
-      break
-    case 'jumpserverSupport':
-      p.title = 'jumpserverSupportPlugin'
       p.type = 'extensions'
       break
     case 'k8sClusterConfig':
