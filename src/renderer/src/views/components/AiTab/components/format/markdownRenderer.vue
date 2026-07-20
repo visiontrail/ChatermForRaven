@@ -1838,6 +1838,34 @@ code {
   margin: 8px 0;
 }
 
+.markdown-content table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 12px;
+}
+
+.markdown-content th,
+.markdown-content td {
+  border: 1px solid var(--border-color);
+  padding: 4px 8px;
+  text-align: left;
+  vertical-align: top;
+  word-break: normal;
+}
+
+.markdown-content th {
+  background-color: var(--bg-color-secondary);
+  font-weight: 600;
+}
+
+.markdown-content tr:nth-child(even) td {
+  background-color: var(--bg-color-secondary);
+}
+
 .code-collapse {
   border: none !important;
   margin-bottom: 2px;
