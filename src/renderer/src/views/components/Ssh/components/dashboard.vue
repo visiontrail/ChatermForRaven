@@ -3,8 +3,8 @@
     <div class="shortcuts-content">
       <img
         class="logo"
-        :src="logoSrc"
-        alt="logo"
+        :src="ravenTerminalLogo"
+        alt="Raven terminal"
       />
       <div class="shortcuts-list">
         <div
@@ -37,15 +37,9 @@ import { shortcutActions, shortcutHintKeys } from '@/config/shortcutActions'
 import { shortcutService } from '@/services/shortcutService'
 import type { ShortcutConfig } from '@/services/userConfigStoreService'
 import { useI18n } from 'vue-i18n'
-import logoDark from '@/assets/img/logo-dark.svg'
-import logoLight from '@/assets/img/logo-light.svg'
+import ravenTerminalLogo from '@/assets/img/raven-terminal.png'
 
 const logger = createRendererLogger('ssh.dashboard')
-
-// Reactive theme tracking
-const isDark = ref(document.documentElement.className.includes('theme-dark'))
-
-const logoSrc = computed(() => (isDark.value ? logoDark : logoLight))
 
 const { t } = useI18n()
 
@@ -111,15 +105,6 @@ const handleShortcutClick = (actionId: string) => {
 onMounted(() => {
   loadShortcuts()
 
-  // Observe theme changes on document.documentElement
-  const observer = new MutationObserver(() => {
-    isDark.value = document.documentElement.className.includes('theme-dark')
-  })
-  observer.observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ['class']
-  })
-
   // Listen for window focus to refresh shortcuts when user returns from settings
   const handleWindowFocus = () => {
     loadShortcuts()
@@ -129,7 +114,6 @@ onMounted(() => {
 
   // Cleanup listeners on unmount
   onUnmounted(() => {
-    observer.disconnect()
     window.removeEventListener('focus', handleWindowFocus)
   })
 })
