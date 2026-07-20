@@ -74,6 +74,7 @@ import { TelemetrySetting } from '@shared/TelemetrySetting'
 import { initKbSearchManager, closeKbSearchManager } from './services/knowledgebase'
 import { startKbSync, stopKbSync } from './services/knowledgebase/sync'
 import type { WebviewMessage } from '@shared/WebviewMessage'
+import { isAutoApprovalSettings } from '@shared/AgentPermissionMode'
 import type { SkillMetadata } from '@shared/skills'
 import { initLogging, logRendererCrash } from '@logging'
 import { parseXshellWakeupFromArgv, redactXshellWakeupForLog, type XshellWakeupPayload } from './integrations/xshellWakeup'
@@ -1112,6 +1113,14 @@ function setupIPC(): void {
   // NOTE: registerKnowledgeBaseHandlers / registerStageChatAttachmentHandlers
   // moved into `bootstrapChatermMain()` so both standalone and embedded modes
   // share the same registration path.
+
+  ipcMain.handle('agent:set-auto-approval-settings', async (_event, settings: unknown) => {
+    if (!isAutoApprovalSettings(settings)) {
+      throw new Error('Invalid auto approval settings')
+    }
+    await controller.updateAutoApprovalSettings(settings)
+    return { success: true }
+  })
 
   ipcMain.handle('init-user-database', async (event, { uid }) => {
     try {

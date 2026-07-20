@@ -325,6 +325,16 @@ export class Task {
   // in this session will be auto-approved to reduce user interaction
   private readOnlyCommandsAutoApproved: boolean = false
 
+  updateAutoApprovalSettings(settings: AutoApprovalSettings): void {
+    this.autoApprovalSettings = settings
+    if (!settings.actions.autoExecuteReadOnlyCommands) {
+      this.readOnlyCommandsAutoApproved = false
+    }
+    if (!settings.enabled) {
+      this.consecutiveAutoApprovedRequestsCount = 0
+    }
+  }
+
   // Interactive command input handling
   private currentRunningProcess:
     | (LocalCommandProcess & { sendInput?: (input: string) => Promise<import('../../services/interaction-detector/types').SendInputResult> })

@@ -1217,6 +1217,8 @@ const api = {
       return Promise.reject(error)
     }
   },
+  setAgentAutoApprovalSettings: (settings: import('../main/agent/shared/AutoApprovalSettings').AutoApprovalSettings) =>
+    ipcRenderer.invoke('agent:set-auto-approval-settings', settings) as Promise<{ success: boolean }>,
   sendToMain: (message: WebviewMessage) => ipcRenderer.invoke('webview-to-main', message) as Promise<void | null>,
   onMainMessage: (callback) => {
     const handler = (_event, message) => callback(message)

@@ -6,6 +6,7 @@ import { Controller } from '../agent/core/controller'
 import { SecurityConfigManager } from '../agent/core/security/SecurityConfig'
 import type { ExtensionMessage } from '../agent/shared/ExtensionMessage'
 import type { WebviewMessage } from '../agent/shared/WebviewMessage'
+import { isAutoApprovalSettings } from '../agent/shared/AgentPermissionMode'
 import { getUserDataPath } from '../config/edition'
 import type { BootstrapDisposer } from './bootstrap'
 
@@ -157,6 +158,19 @@ export function registerEmbeddedAgentIpc(opts: EmbeddedAgentIpcOptions): Bootstr
     'graceful-cancel-task',
     async (_event, payload?: { tabId?: string }) => {
       return controller.gracefulCancelTask(payload?.tabId)
+    },
+    opts.validateSender
+  )
+
+  registerIpc(
+    disposers,
+    'agent:set-auto-approval-settings',
+    async (_event, settings: unknown) => {
+      if (!isAutoApprovalSettings(settings)) {
+        throw new Error('Invalid auto approval settings')
+      }
+      await controller.updateAutoApprovalSettings(settings)
+      return { success: true }
     },
     opts.validateSender
   )

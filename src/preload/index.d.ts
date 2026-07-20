@@ -541,6 +541,7 @@ interface ApiType {
     beforeCursor?: number | null
     limit?: number
   }) => Promise<import('../main/agent/shared/ExtensionMessage').ChatermMessagesPage>
+  setAgentAutoApprovalSettings: (settings: import('../main/agent/shared/AutoApprovalSettings').AutoApprovalSettings) => Promise<{ success: boolean }>
   getTaskMetadata: (taskId: string) => Promise<{
     success: boolean
     data?: TaskMetadata

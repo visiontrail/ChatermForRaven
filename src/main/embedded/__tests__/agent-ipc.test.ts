@@ -24,6 +24,7 @@ const controllerMock = vi.hoisted(() => {
     cancelTask: ReturnType<typeof vi.fn>
     gracefulCancelTask: ReturnType<typeof vi.fn>
     reloadSecurityConfigForAllTasks: ReturnType<typeof vi.fn>
+    updateAutoApprovalSettings: ReturnType<typeof vi.fn>
     dispose: ReturnType<typeof vi.fn>
   }> = []
 
@@ -33,6 +34,7 @@ const controllerMock = vi.hoisted(() => {
       cancelTask: vi.fn().mockResolvedValue(true),
       gracefulCancelTask: vi.fn().mockResolvedValue(true),
       reloadSecurityConfigForAllTasks: vi.fn().mockResolvedValue(undefined),
+      updateAutoApprovalSettings: vi.fn().mockResolvedValue(undefined),
       dispose: vi.fn().mockResolvedValue(undefined)
     }
     instances.push(instance)
@@ -75,7 +77,6 @@ vi.mock('../../agent/core/security/SecurityConfig', () => ({
 vi.mock('../../config/edition', () => ({
   getUserDataPath: vi.fn(() => '/tmp/chaterm-test')
 }))
-
 ;(globalThis as Record<string, unknown>).createLogger = () => ({
   info: vi.fn(),
   warn: vi.fn(),
@@ -127,5 +128,32 @@ describe('registerEmbeddedAgentIpc', () => {
 
     expect(ipcState.handlers.has('webview-to-main')).toBe(false)
     expect(controllerMock.instances[0].dispose).toHaveBeenCalled()
+  })
+
+  it('validates and applies auto approval settings', async () => {
+    registerEmbeddedAgentIpc({
+      webContentsId: 7,
+      validateSender: (event) => event.sender.id === 7
+    })
+
+    const handler = ipcState.handlers.get('agent:set-auto-approval-settings')
+    const settings = {
+      version: 2,
+      enabled: false,
+      actions: {
+        readFiles: true,
+        editFiles: false,
+        executeSafeCommands: true,
+        executeAllCommands: false,
+        autoExecuteReadOnlyCommands: true
+      },
+      maxRequests: 20,
+      enableNotifications: false,
+      favorites: []
+    }
+
+    await expect(handler!(makeFakeEvent(7), settings)).resolves.toEqual({ success: true })
+    expect(controllerMock.instances[0].updateAutoApprovalSettings).toHaveBeenCalledWith(settings)
+    await expect(handler!(makeFakeEvent(7), { enabled: true })).rejects.toThrow('Invalid auto approval settings')
   })
 })

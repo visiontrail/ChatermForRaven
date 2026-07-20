@@ -36,6 +36,7 @@ import { hasValidDbContext, normaliseWorkspace, type DbTaskContext } from '../ta
 import { ApiConfiguration, ApiProvider, PROVIDER_MODEL_KEY_MAP } from '@shared/api'
 import { TITLE_GENERATION_PROMPT, TITLE_GENERATION_PROMPT_CN } from '../prompts/system'
 import { DEFAULT_LANGUAGE_SETTINGS } from '@shared/Languages'
+import type { AutoApprovalSettings } from '@shared/AutoApprovalSettings'
 import type { CommandGenerationContext } from '@shared/WebviewMessage'
 import { isChineseEdition } from '../../../config/edition'
 import { mark } from '@perf'
@@ -115,6 +116,13 @@ export class Controller {
 
   async setUserInfo(info?: { displayName: string | null; email: string | null; photoURL: string | null }) {
     await updateGlobalState('userInfo', info)
+  }
+
+  async updateAutoApprovalSettings(settings: AutoApprovalSettings): Promise<void> {
+    await updateGlobalState('autoApprovalSettings', settings)
+    for (const task of this.tasks.values()) {
+      task.updateAutoApprovalSettings(settings)
+    }
   }
 
   /**

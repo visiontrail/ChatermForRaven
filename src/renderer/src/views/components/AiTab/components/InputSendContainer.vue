@@ -103,6 +103,7 @@
             @keydown.esc.stop
           ></a-select>
         </a-tooltip>
+        <AgentPermissionSelect v-if="!isDatabaseWorkspace && chatTypeValue === 'agent'" />
         <a-select
           v-model:value="chatAiModelValue"
           v-model:open="modelSelectOpen"
@@ -274,6 +275,7 @@ import { notification } from 'ant-design-vue'
 import VoiceInput from '../components/voice/voiceInput.vue'
 import ContextSelectPopup from '../components/ContextSelectPopup.vue'
 import CommandSelectPopup from '../components/CommandSelectPopup.vue'
+import AgentPermissionSelect from './AgentPermissionSelect.vue'
 import { useSessionState } from '../composables/useSessionState'
 import { useContext, contextInjectionKey } from '../composables/useContext'
 import { useCommandSelect, commandSelectInjectionKey } from '../composables/useCommandSelect'
