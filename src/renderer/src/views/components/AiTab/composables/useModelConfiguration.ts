@@ -556,6 +556,12 @@ export const useModelConfiguration = createGlobalState(() => {
   }
 
   const checkModelConfig = async (): Promise<{ success: boolean; message?: string; description?: string }> => {
+    if (isChatermEmbedded()) {
+      const synced = await syncRavenBridgeModelOptions()
+      if (synced) await initModel()
+      else await updateGlobalState('modelOptions', [])
+    }
+
     // Check if there are any available models
     const modelOptions = (await getGlobalState('modelOptions')) as ModelOption[]
     const availableModels = modelOptions.filter((model) => model.checked)

@@ -925,6 +925,7 @@ export default {
     copyToClipboard: 'Copy to clipboard',
     retry: 'Retry',
     taskCompleted: 'Task Completed',
+    responseModel: 'Model: {model}',
     taskProgress: 'Task Progress',
     focusChain: 'Focus Chain',
     currentFocus: 'Current Focus',

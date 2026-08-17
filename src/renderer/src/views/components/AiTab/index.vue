@@ -74,11 +74,7 @@
             <div class="ai-login-prompt">
               <p>{{ $t('user.noAvailableModelMessage') }}</p>
               <p class="ai-prompt-description">
-                {{
-                  isEmbedded || !isSkippedLogin
-                    ? $t('user.noAvailableModelDescriptionLoggedIn')
-                    : $t('user.noAvailableModelDescription')
-                }}
+                {{ isEmbedded || !isSkippedLogin ? $t('user.noAvailableModelDescriptionLoggedIn') : $t('user.noAvailableModelDescription') }}
               </p>
               <div class="ai-prompt-buttons">
                 <a-button
@@ -205,6 +201,13 @@
                         <div class="message-title">
                           <CheckCircleFilled style="color: #52c41a; margin-right: 4px" />
                           {{ $t('ai.taskCompleted') }}
+                          <span
+                            v-if="getResponseModelName(tab.id, message.ts)"
+                            class="response-model-meta"
+                            data-testid="terminal-response-model"
+                          >
+                            {{ $t('ai.responseModel', { model: getResponseModelName(tab.id, message.ts) }) }}
+                          </span>
                         </div>
                         <div class="message-feedback">
                           <a-button
@@ -305,6 +308,19 @@
                         v-else-if="shouldRenderDbQueryResultCard(parseDbQueryResult(message))"
                         :result="parseDbQueryResult(message)!"
                       />
+
+                      <div
+                        v-if="
+                          message.say !== 'completion_result' &&
+                          isLastMessage(tab.id, message.id) &&
+                          !getTabResponseLoading(tab.id) &&
+                          getResponseModelName(tab.id, message.ts)
+                        "
+                        class="response-model-footer"
+                        data-testid="terminal-response-model"
+                      >
+                        {{ $t('ai.responseModel', { model: getResponseModelName(tab.id, message.ts) }) }}
+                      </div>
 
                       <div
                         v-if="message.ask === 'mcp_tool_call' && message.mcpToolCall"
@@ -892,6 +908,7 @@ import historyIcon from '@/assets/icons/history.svg'
 import plusIcon from '@/assets/icons/plus.svg'
 import skillsIcon from '@/assets/icons/skills.svg'
 import { isChatermEmbedded } from '@/utils/embedded'
+import { findResponseModelId } from './responseModel'
 
 interface TabInfo {
   id: string
@@ -982,6 +999,12 @@ const {
   getTabLastChatMessageId,
   getTabResponseLoading
 } = useSessionState()
+
+const getResponseModelName = (tabId: string, responseTimestamp?: number): string | undefined => {
+  const tab = chatTabs.value.find((item) => item.id === tabId)
+  const history = tab?.session.lastStateChatermMessages || tab?.session.chatHistory || []
+  return findResponseModelId(history as Array<{ say?: string; ts?: number; text?: unknown; content?: unknown }>, responseTimestamp)
+}
 
 // Model configuration management
 const { hasAvailableModels, initModel, checkModelConfig, initModelOptions, refreshModelOptions } = useModelConfiguration()

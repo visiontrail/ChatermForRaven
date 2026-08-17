@@ -2496,6 +2496,7 @@ export class Task {
       'api_req_started',
       JSON.stringify({
         request: userContent.map((block) => formatContentBlockToMarkdown(block)).join('\n\n') + '\n\nLoading...',
+        modelId: this.api.getModel().id,
         contextWindow: this.api.getModel().info.contextWindow
       })
     )
@@ -2604,6 +2605,7 @@ export class Task {
   private async updateApiRequestMessage(userContent: UserContent): Promise<void> {
     const lastApiReqIndex = findLastIndex(this.chatermMessages, (m) => m.say === 'api_req_started')
     this.chatermMessages[lastApiReqIndex].text = JSON.stringify({
+      ...JSON.parse(this.chatermMessages[lastApiReqIndex].text || '{}'),
       request: userContent.map((block) => formatContentBlockToMarkdown(block)).join('\n\n')
     } satisfies ChatermApiReqInfo)
 
@@ -2658,6 +2660,7 @@ export class Task {
               streamMetrics.cacheReadTokens
             ),
           contextWindow: this.api.getModel().info.contextWindow,
+          modelId: this.api.getModel().id,
           cancelReason,
           streamingFailedMessage
         } satisfies ChatermApiReqInfo)

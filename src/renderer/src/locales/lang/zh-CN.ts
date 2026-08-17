@@ -907,6 +907,7 @@ export default {
     copyToClipboard: '已复制到剪贴板',
     retry: '重试',
     taskCompleted: '任务已完成',
+    responseModel: '模型：{model}',
     taskProgress: '运维任务进度',
     focusChain: '聚焦链',
     currentFocus: '当前聚焦',

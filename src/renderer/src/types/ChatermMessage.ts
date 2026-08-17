@@ -96,6 +96,7 @@ export interface ChatermAskNewTask {
 
 export interface ChatermApiReqInfo {
   request?: string
+  modelId?: string
   tokensIn?: number
   tokensOut?: number
   cacheWrites?: number
