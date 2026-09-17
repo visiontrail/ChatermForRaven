@@ -32,3 +32,33 @@ export function findResponseModelId(history: ResponseModelHistoryMessage[], resp
   }
   return undefined
 }
+
+/** Wall time across this turn's requests, including tool execution between them.
+ * Legacy histories without a persisted completion time intentionally omit duration.
+ */
+export function findResponseDuration(history: ResponseModelHistoryMessage[], responseTimestamp?: number, userTimestamp?: number): string | undefined {
+  if (responseTimestamp === undefined) return undefined
+  const requests = history.filter(
+    (message) =>
+      message.say === 'api_req_started' &&
+      message.ts !== undefined &&
+      message.ts <= responseTimestamp &&
+      (userTimestamp === undefined || message.ts >= userTimestamp)
+  )
+  const lastRequest = requests.at(-1)
+  if (!lastRequest) return undefined
+  let metadata = lastRequest.text ?? lastRequest.content
+  if (typeof metadata === 'string') {
+    try {
+      metadata = JSON.parse(metadata)
+    } catch {
+      return undefined
+    }
+  }
+  const completedAt = (metadata as { completedAt?: unknown } | null)?.completedAt
+  const startedAt = userTimestamp === undefined ? lastRequest.ts : requests[0]?.ts
+  if (typeof completedAt !== 'number' || !Number.isFinite(completedAt) || startedAt === undefined || completedAt < startedAt) {
+    return undefined
+  }
+  return `${((completedAt - startedAt) / 1000).toFixed(2)}s`
+}

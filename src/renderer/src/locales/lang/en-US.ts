@@ -926,6 +926,7 @@ export default {
     retry: 'Retry',
     taskCompleted: 'Task Completed',
     responseModel: 'Model: {model}',
+    responseDuration: 'Duration: {duration}',
     taskProgress: 'Task Progress',
     focusChain: 'Focus Chain',
     currentFocus: 'Current Focus',

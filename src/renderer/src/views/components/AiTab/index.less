@@ -301,6 +301,48 @@
   width: 100%;
   position: relative;
 
+  // Match the Service chat footer for both ordinary replies and task completions.
+  .response-model-footer {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 8px 12px 4px;
+    color: var(--text-color-tertiary);
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 10.5px;
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.3;
+    letter-spacing: 0.01em;
+    text-align: right;
+
+    .response-model-name {
+      min-width: 0;
+      max-width: 280px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .response-model-separator {
+      width: 3px;
+      height: 3px;
+      flex: 0 0 3px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: 0.5;
+    }
+
+    .response-duration {
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+  }
+
   &.last-message {
     padding: 0px 12px;
     border-radius: 4px;
@@ -324,19 +366,6 @@
       font-size: 12px;
       font-weight: 500;
       color: var(--text-color);
-
-      .response-model-meta {
-        margin-left: 8px;
-        font-size: 11px;
-        font-weight: 400;
-        color: var(--text-color-secondary);
-      }
-    }
-
-    .response-model-footer {
-      margin-top: 4px;
-      font-size: 11px;
-      color: var(--text-color-secondary);
     }
 
     .message-feedback {

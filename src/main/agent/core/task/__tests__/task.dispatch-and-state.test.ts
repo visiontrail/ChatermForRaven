@@ -88,6 +88,24 @@ describe('Task dispatch and state flow', () => {
     }
   })
 
+  it('preserves stream completion time when delayed usage arrives', () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(12340)
+    try {
+      task.chatermMessages = [{ say: 'api_req_started', ts: 1000, text: '{}' }]
+      task.api = { getModel: () => ({ id: 'served-model', info: { contextWindow: 10000 } }) }
+      const metrics = { inputTokens: 10, outputTokens: 20, cacheWriteTokens: 0, cacheReadTokens: 0, totalCost: 0 }
+      const updater = task.createMessageUpdater(metrics)
+      updater.updateApiReqMsg()
+      expect(JSON.parse(task.chatermMessages[0].text)).toMatchObject({ completedAt: 12340, modelId: 'served-model' })
+      clock.mockReturnValue(30000)
+      metrics.outputTokens = 50
+      updater.updateApiReqMsg()
+      expect(JSON.parse(task.chatermMessages[0].text)).toMatchObject({ completedAt: 12340, tokensOut: 50 })
+    } finally {
+      clock.mockRestore()
+    }
+  })
+
   it('handleWebviewAskResponse should persist payload and apply truncation', async () => {
     const contentParts = [{ type: 'chip', chipType: 'doc' }]
     const toolResult = { output: 'ls output', toolName: 'execute_command' }

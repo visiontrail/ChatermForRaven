@@ -187,6 +187,8 @@ export interface ChatermAskNewTask {
 }
 
 export interface ChatermApiReqInfo {
+  /** Persisted stream completion time; later usage updates must preserve it. */
+  completedAt?: number
   request?: string
   modelId?: string
   tokensIn?: number

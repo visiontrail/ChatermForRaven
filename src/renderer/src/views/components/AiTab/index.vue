@@ -201,13 +201,6 @@
                         <div class="message-title">
                           <CheckCircleFilled style="color: #52c41a; margin-right: 4px" />
                           {{ $t('ai.taskCompleted') }}
-                          <span
-                            v-if="getResponseModelName(tab.id, message.ts)"
-                            class="response-model-meta"
-                            data-testid="terminal-response-model"
-                          >
-                            {{ $t('ai.responseModel', { model: getResponseModelName(tab.id, message.ts) }) }}
-                          </span>
                         </div>
                         <div class="message-feedback">
                           <a-button
@@ -311,15 +304,29 @@
 
                       <div
                         v-if="
-                          message.say !== 'completion_result' &&
-                          isLastMessage(tab.id, message.id) &&
-                          !getTabResponseLoading(tab.id) &&
+                          (message.say === 'completion_result' || message.id === pair.assistants.at(-1)?.message.id) &&
+                          !message.partial &&
+                          !(isLastMessage(tab.id, message.id) && getTabResponseLoading(tab.id)) &&
                           getResponseModelName(tab.id, message.ts)
                         "
                         class="response-model-footer"
                         data-testid="terminal-response-model"
                       >
-                        {{ $t('ai.responseModel', { model: getResponseModelName(tab.id, message.ts) }) }}
+                        <span
+                          class="response-model-name"
+                          :title="getResponseModelName(tab.id, message.ts)"
+                        >
+                          {{ $t('ai.responseModel', { model: getResponseModelName(tab.id, message.ts) }) }}
+                        </span>
+                        <template v-if="getResponseDuration(tab.id, message.ts, pair.user?.message.ts)">
+                          <span
+                            class="response-model-separator"
+                            aria-hidden="true"
+                          />
+                          <span class="response-duration">
+                            {{ $t('ai.responseDuration', { duration: getResponseDuration(tab.id, message.ts, pair.user?.message.ts) }) }}
+                          </span>
+                        </template>
                       </div>
 
                       <div
@@ -908,7 +915,7 @@ import historyIcon from '@/assets/icons/history.svg'
 import plusIcon from '@/assets/icons/plus.svg'
 import skillsIcon from '@/assets/icons/skills.svg'
 import { isChatermEmbedded } from '@/utils/embedded'
-import { findResponseModelId } from './responseModel'
+import { findResponseDuration, findResponseModelId, type ResponseModelHistoryMessage } from './responseModel'
 
 interface TabInfo {
   id: string
@@ -1000,11 +1007,16 @@ const {
   getTabResponseLoading
 } = useSessionState()
 
-const getResponseModelName = (tabId: string, responseTimestamp?: number): string | undefined => {
+const getResponseHistory = (tabId: string): ResponseModelHistoryMessage[] => {
   const tab = chatTabs.value.find((item) => item.id === tabId)
-  const history = tab?.session.lastStateChatermMessages || tab?.session.chatHistory || []
-  return findResponseModelId(history as Array<{ say?: string; ts?: number; text?: unknown; content?: unknown }>, responseTimestamp)
+  return (tab?.session.lastStateChatermMessages || tab?.session.chatHistory || []) as ResponseModelHistoryMessage[]
 }
+
+const getResponseModelName = (tabId: string, responseTimestamp?: number): string | undefined =>
+  findResponseModelId(getResponseHistory(tabId), responseTimestamp)
+
+const getResponseDuration = (tabId: string, responseTimestamp?: number, userTimestamp?: number): string | undefined =>
+  findResponseDuration(getResponseHistory(tabId), responseTimestamp, userTimestamp)
 
 // Model configuration management
 const { hasAvailableModels, initModel, checkModelConfig, initModelOptions, refreshModelOptions } = useModelConfiguration()

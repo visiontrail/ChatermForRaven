@@ -2642,10 +2642,13 @@ export class Task {
   private createMessageUpdater(streamMetrics: StreamMetrics): MessageUpdater {
     const lastApiReqIndex = findLastIndex(this.chatermMessages, (m) => m.say === 'api_req_started')
 
+    let completedAt: number | undefined
+
     return {
       updateApiReqMsg: (cancelReason?: ChatermApiReqCancelReason, streamingFailedMessage?: string) => {
         this.chatermMessages[lastApiReqIndex].text = JSON.stringify({
           ...JSON.parse(this.chatermMessages[lastApiReqIndex].text || '{}'),
+          completedAt: (completedAt ??= Date.now()),
           tokensIn: streamMetrics.inputTokens,
           tokensOut: streamMetrics.outputTokens,
           cacheWrites: streamMetrics.cacheWriteTokens,

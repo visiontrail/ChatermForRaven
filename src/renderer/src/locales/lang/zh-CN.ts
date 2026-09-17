@@ -908,6 +908,7 @@ export default {
     retry: '重试',
     taskCompleted: '任务已完成',
     responseModel: '模型：{model}',
+    responseDuration: '耗时：{duration}',
     taskProgress: '运维任务进度',
     focusChain: '聚焦链',
     currentFocus: '当前聚焦',
