@@ -48,6 +48,7 @@ vi.mock('@core/prompts/responses', () => ({
 }))
 
 import { Task } from '../index'
+import { parseAssistantMessageWithProtocol } from '../../assistant-message'
 
 describe('Task dispatch and state flow', () => {
   let task: any
@@ -201,5 +202,83 @@ describe('Task dispatch and state flow', () => {
     })
     expect(task.recursivelyMakeChatermRequests).toHaveBeenCalledWith(task.userMessageContent)
     expect(result).toBe(true)
+  })
+
+  it.each([
+    '<execute_command><ip>test-device</ip><requires_approval>false</requires_approval><command>printf cut',
+    '<｜｜DSML｜｜ calls><｜｜DSML｜｜ invoke name="execute_command">'
+  ])('requests repair without executing truncated calls or reporting completion', async (text) => {
+    task.resetStreamingState()
+    task.consecutiveMistakeCount = 0
+    task.didCompleteReadingStream = true
+    task.hosts = [{ host: 'test-device' }]
+    task.ask = vi.fn()
+    const parsed = parseAssistantMessageWithProtocol(text)
+    task.assistantMessageContent = parsed.content
+    task.assistantMessageProtocolError = parsed.protocolError
+    await task.finalizePartialBlocks()
+    await vi.waitFor(() => expect(task.userMessageContentReady).toBe(true))
+    expect(task.handleExecuteCommandToolUse).not.toHaveBeenCalled()
+    expect(task.ask).not.toHaveBeenCalled()
+    expect(task.userMessageContent[0].text).toContain('[Tool protocol error]')
+    expect(task.consecutiveMistakeCount).toBe(1)
+  })
+
+  it('advances an execution task after prose instead of silently waiting for the user', async () => {
+    task.hosts = [{ host: 'test-device' }]
+    task.consecutiveMistakeCount = 0
+    task.currentStreamingContentIndex = 0
+    task.assistantMessageContent = [{ type: 'text', content: 'I will inspect the logs.', partial: false }]
+    task.ask = vi.fn()
+    await task.handleTextBlock(task.assistantMessageContent[0])
+    expect(task.ask).not.toHaveBeenCalled()
+    expect(task.userMessageContent).toEqual([{ type: 'text', text: 'No tools used.' }])
+    expect(task.consecutiveMistakeCount).toBe(1)
+  })
+
+  it.each(['chat', 'no-host'])('preserves conversational completion for %s', async (mode) => {
+    getGlobalStateMock.mockResolvedValue({ mode: mode === 'chat' ? 'chat' : 'agent' })
+    task.hosts = mode === 'chat' ? [{ host: 'test-device' }] : []
+    task.currentStreamingContentIndex = 0
+    task.assistantMessageContent = [{ type: 'text', content: 'Explanation.', partial: false }]
+    task.ask = vi.fn().mockResolvedValue({ response: 'yesButtonClicked' })
+    await task.handleTextBlock(task.assistantMessageContent[0])
+    expect(task.ask).toHaveBeenCalledWith('completion_result', '', false)
+    expect(task.userMessageContent).toEqual([])
+  })
+
+  it('bounds repeated protocol/no-tool repairs with the existing mistake limit', async () => {
+    task.consecutiveMistakeCount = 3
+    task.autoApprovalSettings = { enabled: false }
+    task.api = { getModel: () => ({ id: 'test' }) }
+    task.messages = { consecutiveMistakesErrorOther: 'Cannot continue automatically' }
+    task.ask = vi.fn().mockResolvedValue({ response: 'yesButtonClicked' })
+    await task.handleConsecutiveMistakes([])
+    expect(task.ask).toHaveBeenCalledWith('mistake_limit_reached', 'Cannot continue automatically')
+    expect(task.consecutiveMistakeCount).toBe(0)
+  })
+
+  it('does not skip a completed call when a partial preview finishes after the stream', async () => {
+    task.resetStreamingState()
+    const partial = { type: 'tool_use', name: 'attempt_completion', params: { result: 'Verified' }, partial: true }
+    task.assistantMessageContent = [partial]
+    let finishPreview!: () => void
+    task.handleAttemptCompletionToolUse = vi.fn().mockResolvedValue(undefined)
+    task.handleAttemptCompletionToolUse.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishPreview = resolve
+        })
+    )
+    const presentation = task.presentAssistantMessage()
+    await vi.waitFor(() => expect(finishPreview).toBeTypeOf('function'))
+    task.assistantMessageContent = [{ ...partial, partial: false }]
+    task.didCompleteReadingStream = true
+    task.presentAssistantMessageHasPendingUpdates = true
+    finishPreview()
+    await presentation
+    await vi.waitFor(() => expect(task.handleAttemptCompletionToolUse).toHaveBeenCalledTimes(2))
+    expect(task.handleAttemptCompletionToolUse.mock.calls[1][0].partial).toBe(false)
+    await vi.waitFor(() => expect(task.userMessageContentReady).toBe(true))
   })
 })

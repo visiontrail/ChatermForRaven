@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { buildApiHandler } from '../index'
 import { RavenBridgeHandler } from '../raven-bridge/raven-bridge'
 import type { BridgeStreamEvent, RavenLLMClient } from '../raven-bridge/types'
+import { parseAssistantMessageWithProtocol } from '../../core/assistant-message'
 
 function createMockClient(events: BridgeStreamEvent[]): RavenLLMClient & {
   abort: ReturnType<typeof vi.fn>
@@ -137,6 +138,47 @@ describe('RavenBridgeHandler', () => {
     await stream.return(undefined)
     expect(client.abort).toHaveBeenCalledTimes(1)
     expect(client.abort.mock.calls[0][0]).toEqual(expect.any(String))
+  })
+
+  it('keeps interleaved native calls separate and does not duplicate final JSON', async () => {
+    const client = createMockClient([
+      { type: 'tool_use_start', toolCallId: 'a', name: 'todo_read' },
+      { type: 'tool_use_start', toolCallId: 'b', name: 'execute_command' },
+      { type: 'tool_use_delta', toolCallId: 'b', inputJsonDelta: '{"command":"id"}' },
+      { type: 'tool_use_end', toolCallId: 'a', finalInput: {} },
+      { type: 'tool_use_end', toolCallId: 'b', finalInput: '{"command":"id"}' },
+      { type: 'end', finishReason: 'tool_use' }
+    ])
+    const chunks = await collectStream(new RavenBridgeHandler(client))
+    const parsed = parseAssistantMessageWithProtocol(
+      chunks
+        .filter((c) => c.type === 'text')
+        .map((c) => c.text)
+        .join('')
+    )
+    expect(parsed.content).toMatchObject([
+      { name: 'todo_read', params: {}, partial: false },
+      { name: 'execute_command', params: { command: 'id' }, partial: false }
+    ])
+  })
+
+  it.each([
+    [
+      { type: 'tool_use_start', toolCallId: 'a', name: 'execute_command' },
+      { type: 'tool_use_delta', toolCallId: 'a', inputJsonDelta: '{"command":' },
+      { type: 'tool_use_end', toolCallId: 'a', finalInput: undefined }
+    ],
+    [
+      { type: 'tool_use_start', toolCallId: 'a', name: 'execute_command' },
+      { type: 'end', finishReason: 'length' }
+    ]
+  ] satisfies BridgeStreamEvent[][])('never emits a half-built native command', async (...events) => {
+    const chunks: string[] = []
+    const handler = new RavenBridgeHandler(createMockClient(events))
+    await expect(async () => {
+      for await (const chunk of handler.createMessage('system', [])) if (chunk.type === 'text') chunks.push(chunk.text)
+    }).rejects.toThrow(/structured tool/)
+    expect(chunks).toEqual([])
   })
 
   it('does not throw when the bridge ends with finishReason=abort', async () => {

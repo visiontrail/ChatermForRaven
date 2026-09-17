@@ -12,6 +12,7 @@ import { registeredToolNames, type ToolUseName as RegistryToolUseName } from '..
 export type AssistantMessageContent = TextContent | ToolUse
 
 export { parseAssistantMessageV2 } from './parse-assistant-message'
+export { parseAssistantMessageWithProtocol } from './parse-tool-protocol'
 
 export interface TextContent {
   type: 'text'
@@ -93,4 +94,6 @@ export interface ToolUse {
   // params is a partial record, allowing only some or none of the possible parameters to be used
   params: Partial<Record<ToolParamName, string>>
   partial: boolean
+  /** DSML parameter bodies are literal values, unlike legacy XML entities. */
+  format?: 'dsml'
 }

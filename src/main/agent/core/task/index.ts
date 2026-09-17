@@ -66,7 +66,7 @@ interface MessageUpdater {
   updateApiReqMsg: (cancelReason?: ChatermApiReqCancelReason, streamingFailedMessage?: string) => void
 }
 
-import { AssistantMessageContent, parseAssistantMessageV2, ToolParamName, ToolUseName, TextContent, ToolUse } from '@core/assistant-message'
+import { AssistantMessageContent, parseAssistantMessageWithProtocol, ToolParamName, ToolUseName, TextContent, ToolUse } from '@core/assistant-message'
 import { isToolAllowed, type TaskWorkspace } from './tool-registry'
 import { DEFAULT_WORKSPACE, hasValidDbContext, normaliseWorkspace, type DbTaskContext } from './workspace'
 import {
@@ -347,6 +347,7 @@ export class Task {
 
   private currentStreamingContentIndex = 0
   private assistantMessageContent: AssistantMessageContent[] = []
+  private assistantMessageProtocolError?: string
   private presentAssistantMessageLocked = false
   private presentAssistantMessageHasPendingUpdates = false
   private userMessageContent: (Anthropic.TextBlockParam | Anthropic.ImageBlockParam)[] = []
@@ -2374,7 +2375,8 @@ export class Task {
     }
 
     this.presentAssistantMessageLocked = false // this needs to be placed here, if not then calling this.presentAssistantMessage below would fail (sometimes) since it's locked
-    if (!block.partial || this.didRejectTool || this.didAlreadyUseTool) {
+    const endedWhileStillPartial = this.didCompleteReadingStream && this.assistantMessageContent[this.currentStreamingContentIndex]?.partial
+    if (!block.partial || endedWhileStillPartial || this.didRejectTool || this.didAlreadyUseTool) {
       if (this.currentStreamingContentIndex === this.assistantMessageContent.length - 1) {
         this.userMessageContentReady = true // will allow pwaitfor to continue
       }
@@ -2674,6 +2676,7 @@ export class Task {
   private resetStreamingState(): void {
     this.currentStreamingContentIndex = 0
     this.assistantMessageContent = []
+    this.assistantMessageProtocolError = undefined
     this.didCompleteReadingStream = false
     this.userMessageContent = []
     this.userMessageContentReady = false
@@ -2749,7 +2752,9 @@ export class Task {
     assistantMessage += chunk.text
     const prevLength = this.assistantMessageContent.length
 
-    this.assistantMessageContent = parseAssistantMessageV2(assistantMessage)
+    const parsed = parseAssistantMessageWithProtocol(assistantMessage)
+    this.assistantMessageContent = parsed.content
+    this.assistantMessageProtocolError = parsed.protocolError
 
     if (this.assistantMessageContent.length > prevLength) {
       this.userMessageContentReady = false
@@ -2851,20 +2856,33 @@ export class Task {
     }
 
     this.didCompleteReadingStream = true
-    this.finalizePartialBlocks()
+    await this.finalizePartialBlocks()
 
     messageUpdater.updateApiReqMsg()
     await this.saveChatermMessagesAndUpdateHistory()
     await this.postStateToWebview()
   }
 
-  private finalizePartialBlocks(): void {
+  private async finalizePartialBlocks(): Promise<void> {
     const partialBlocks = this.assistantMessageContent.filter((block) => block.partial)
+    const incompleteTool = partialBlocks.some((block) => block.type === 'tool_use')
+    if ((incompleteTool || this.assistantMessageProtocolError) && !this.didAlreadyUseTool && !this.didRejectTool) {
+      this.consecutiveMistakeCount++
+      this.userMessageContent.push({
+        type: 'text',
+        text:
+          '[Tool protocol error] No incomplete or invalid call was executed. ' +
+          'Resend the next tool using the complete XML format in the system instructions. ' +
+          'Wait for its real result before the next step; use attempt_completion only after the task is finished.'
+      })
+      logger.warn('Requesting tool protocol repair', { event: 'agent.task.tool_protocol.repair', taskId: this.taskId })
+    }
     partialBlocks.forEach((block) => {
-      block.partial = false
+      // End-of-stream is not evidence that a command/file write is complete.
+      if (block.type === 'text') block.partial = false
     })
 
-    if (partialBlocks.length > 0) {
+    if (partialBlocks.length > 0 || this.assistantMessageContent.length === 0) {
       this.presentAssistantMessage()
     }
   }
@@ -3011,7 +3029,7 @@ export class Task {
         if (!command) return this.handleMissingParam('command', toolDescription, 'execute_command')
         if (!ip) return this.handleMissingParam('ip', toolDescription, 'execute_command')
         if (!requiresApprovalRaw) return this.handleMissingParam('requires_approval', toolDescription, 'execute_command')
-        command = decodeHtmlEntities(command)
+        if (block.format !== 'dsml') command = decodeHtmlEntities(command)
         // Perform security check
         const securityCheck = await this.performCommandSecurityCheck(command, toolDescription)
         if (securityCheck.shouldReturn) {
@@ -3774,6 +3792,9 @@ export class Task {
   }
 
   private async handleToolUse(block: ToolUse): Promise<void> {
+    // Partial handlers may preview input during streaming, but must never execute
+    // a truncated call when the provider closes the stream.
+    if (block.partial && this.didCompleteReadingStream) return
     const toolDescription = this.getToolDescription(block)
 
     // In chat mode, tools are not allowed - this is a pure conversation mode
@@ -4664,12 +4685,16 @@ export class Task {
 
     await this.say('text', content, block.partial)
 
-    // If this is a complete text block and the last content block, wait for user input
+    // Prose is not a completion signal for an execution-capable task. Require an
+    // explicit completion/follow-up tool, otherwise keep the agent loop moving.
     if (!block.partial && this.currentStreamingContentIndex === this.assistantMessageContent.length - 1) {
-      // Check if there is a tool call
-      // const hasToolUse = this.assistantMessageContent.some((block) => block.type === 'tool_use')
-
-      // if (!hasToolUse) {
+      if (this.assistantMessageProtocolError) return
+      const chatSettings = await getGlobalState('chatSettings')
+      if (chatSettings?.mode !== 'chat' && (this.hosts?.length || this.workspace === 'database')) {
+        this.consecutiveMistakeCount++
+        this.userMessageContent.push({ type: 'text', text: this.responseFormatter.noToolsUsed() })
+        return
+      }
       const { response, text, contentParts } = await this.ask('completion_result', '', false)
 
       if (response === 'yesButtonClicked') {
@@ -4685,7 +4710,6 @@ export class Task {
       }
 
       this.didAlreadyUseTool = true
-      // }
     }
   }
 

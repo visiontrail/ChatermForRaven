@@ -78,6 +78,8 @@ There is a saying that every agent fails all the time, but Chaterm helps you fix
 
   The Agent understands the target, autonomously plans, and performs problem analysis and root cause localization across multiple hosts, automatically closing the loop to complete complex process handling.
 
+  Device workflows continue from each command's actual result until an explicit completion or clarification. XML, DSML and Raven bridge tool calls share the same dispatch and approval rules. Invalid or truncated text tool calls request a bounded format repair; truncated commands are never executed.
+
   Every operation is auditable and traceable, and supports rapid log rollback, making AI automation more secure and reliable in production environments.
 
 - 🧠 **Smart completion**

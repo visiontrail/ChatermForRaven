@@ -9,7 +9,8 @@ import type { ApiHandler } from '../index'
 import type { ApiStream, ApiStreamUsageChunk } from '../transform/stream'
 import { ApiHandlerOptions, ModelInfo } from '@shared/api'
 
-import { formatToolParamsXml } from './tool-use-xml'
+import { toolUseToXml } from './tool-use-xml'
+import { getToolMetadata, type ToolUseName } from '../../core/task/tool-registry'
 import type { BridgeMessage, BridgeStreamEvent, CreateMessageRequest, RavenLLMClient } from './types'
 
 const logger = createLogger('agent')
@@ -17,7 +18,6 @@ const logger = createLogger('agent')
 interface ToolCallState {
   name: string
   jsonParts: string[]
-  opened: boolean
 }
 
 // Generous default: agent-sized prompts on reasoning models can take minutes
@@ -45,7 +45,7 @@ function parseToolInput(state: ToolCallState, finalInput: unknown): Record<strin
     return finalInput as Record<string, unknown>
   }
 
-  const raw = [...state.jsonParts, typeof finalInput === 'string' ? finalInput : ''].join('').trim()
+  const raw = (typeof finalInput === 'string' ? finalInput : state.jsonParts.join('')).trim()
   if (!raw) {
     return {}
   }
@@ -55,11 +55,10 @@ function parseToolInput(state: ToolCallState, finalInput: unknown): Record<strin
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       return parsed as Record<string, unknown>
     }
-  } catch (error) {
-    logger.warn('Failed to parse streamed tool input JSON', { error, toolName: state.name })
+  } catch {
+    // Do not turn invalid input into an executable empty call.
   }
-
-  return {}
+  throw new Error('Invalid structured tool input from Raven LLM bridge')
 }
 
 function waitForQueue<T>(queue: T[], wake: { current?: () => void }, timeoutMs?: number): Promise<void> {
@@ -165,12 +164,12 @@ export class RavenBridgeHandler implements ApiHandler {
             sawModelEvent = true
             const state: ToolCallState = {
               name: event.name,
-              jsonParts: event.partialInput ? [event.partialInput] : [],
-              opened: false
+              jsonParts: event.partialInput ? [event.partialInput] : []
+            }
+            if (toolCalls.has(event.toolCallId) || !getToolMetadata(event.name as ToolUseName)) {
+              throw new Error('Invalid structured tool start from Raven LLM bridge')
             }
             toolCalls.set(event.toolCallId, state)
-            yield { type: 'text', text: `<${event.name}>` }
-            state.opened = true
             break
           }
 
@@ -188,9 +187,9 @@ export class RavenBridgeHandler implements ApiHandler {
             const state = toolCalls.get(event.toolCallId)
             if (state) {
               const input = parseToolInput(state, event.finalInput)
-              const paramsXml = formatToolParamsXml(input)
-              const suffix = paramsXml.length > 0 ? `\n${paramsXml}\n</${state.name}>` : `</${state.name}>`
-              yield { type: 'text', text: suffix }
+              // Native calls may be interleaved. Emit each validated call as one
+              // complete frame so it cannot become nested or execute half-built.
+              yield { type: 'text', text: toolUseToXml(state.name, input) }
               toolCalls.delete(event.toolCallId)
             }
             break
@@ -202,6 +201,9 @@ export class RavenBridgeHandler implements ApiHandler {
             sawTerminalEnd = true
             if (event.finishReason === 'error') {
               throw new Error(event.error ?? 'Raven LLM bridge request failed')
+            }
+            if (toolCalls.size && event.finishReason !== 'abort') {
+              throw new Error('Incomplete structured tool call from Raven LLM bridge')
             }
             break
         }

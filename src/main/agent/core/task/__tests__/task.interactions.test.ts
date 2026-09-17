@@ -1,4 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { execFile } from 'node:child_process'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { promisify } from 'node:util'
 
 const { telemetryMocks } = vi.hoisted(() => ({
   telemetryMocks: {
@@ -76,6 +81,9 @@ vi.mock('../../../storage/chat_sync/index', () => ({
 
 import { Task } from '../index'
 import { getGlobalState } from '@core/storage/state'
+import { RavenBridgeHandler } from '../../../api/raven-bridge/raven-bridge'
+import type { BridgeStreamEvent, RavenLLMClient } from '../../../api/raven-bridge/types'
+import { toolUseToXml } from '../../../api/raven-bridge/tool-use-xml'
 
 const originalEmbeddedEnv = process.env.CHATERM_EMBEDDED
 
@@ -145,6 +153,98 @@ describe('Task interaction-heavy branches', () => {
       delete process.env.CHATERM_EMBEDDED
     } else {
       process.env.CHATERM_EMBEDDED = originalEmbeddedEnv
+    }
+  })
+
+  it.each(['xml', 'dsml', 'native'])('finishes a dependent discover/archive/verify workflow through %s and the real task loop', async (format) => {
+    const directory = await mkdtemp(join(tmpdir(), 'chaterm-multistep-'))
+    try {
+      await writeFile(join(directory, 'service.log'), 'test log entry\n')
+      process.env.CHATERM_EMBEDDED = '0'
+      vi.mocked(getGlobalState).mockResolvedValue({ mode: 'agent' })
+      task.hosts = [{ host: 'test-device' }]
+      task.workspace = 'server'
+      task.consecutiveMistakeCount = 0
+      task.consecutiveAutoApprovedRequestsCount = 0
+      task.pendingToolResults = []
+      task.apiConversationHistory = []
+      task.shouldAutoApproveTool.mockReturnValue([true, true])
+      task.pushToolResult = (Task.prototype as any).pushToolResult
+      task.addToApiConversationHistory = vi.fn(async (message) => task.apiConversationHistory.push(message))
+      task.postStateToWebview = vi.fn()
+      task.checkUserContentForTodo = vi.fn()
+      task.recordModelUsage = vi.fn()
+      task.prepareApiRequest = vi.fn(async (content) => {
+        task.chatermMessages.push({ say: 'api_req_started', text: '{}' })
+        if (content.length) await task.addToApiConversationHistory({ role: 'user', content: structuredClone(content) })
+      })
+      task.executeCommandTool = vi.fn(async (command) => {
+        const { stdout } = await promisify(execFile)('/bin/sh', ['-c', command], { cwd: directory })
+        return stdout
+      })
+      task.ask.mockImplementation(async (kind) => {
+        expect(kind).toBe('completion_result')
+        // Stop at the ordinary UI completion wait; no additional model turn.
+        task.abort = true
+        return { response: 'yesButtonClicked' }
+      })
+      let turn = 0
+      const listeners = new Map<string, (event: BridgeStreamEvent) => void>()
+      const commands = ['ls *.log', 'tar -czf collected.tgz service.log && printf archived', 'tar -tzf collected.tgz']
+      const client: RavenLLMClient = {
+        listAvailableModels: vi.fn(async () => []),
+        abort: vi.fn(async () => undefined),
+        onStreamEvent: (id, callback) => {
+          listeners.set(id, callback)
+          return () => listeners.delete(id)
+        },
+        createMessage: vi.fn(async (request) => {
+          const current = turn++
+          if (current > 0) {
+            const expected = current === 1 ? 'No tools were used.' : current === 3 ? 'archived' : 'service.log'
+            expect(JSON.stringify(request.messages)).toContain(expected)
+          }
+          const emit = (event: BridgeStreamEvent) => listeners.get(request.requestId)?.(event)
+          if (current === 0) {
+            emit({ type: 'text', delta: 'I will inspect, archive, then verify.' })
+          } else {
+            const name = current <= 3 ? 'execute_command' : 'attempt_completion'
+            const params =
+              current <= 3
+                ? { ip: 'test-device', command: commands[current - 1], requires_approval: 'false', interactive: 'false' }
+                : { result: 'Verified collected.tgz contains service.log', depositExperience: 'false' }
+            if (format === 'native') {
+              emit({ type: 'tool_use_start', toolCallId: `call-${current}`, name })
+              emit({ type: 'tool_use_delta', toolCallId: `call-${current}`, inputJsonDelta: JSON.stringify(params) })
+              emit({ type: 'tool_use_end', toolCallId: `call-${current}`, finalInput: undefined })
+            } else {
+              const text =
+                format === 'xml'
+                  ? toolUseToXml(name, params)
+                  : `<｜｜DSML｜｜ calls><｜｜DSML｜｜ invoke name="${name}">` +
+                    Object.entries(params)
+                      .map(([key, value]) => `<｜｜DSML｜｜ parameter name="${key}">${value}</｜｜DSML｜｜ parameter>`)
+                      .join('') +
+                    '</｜｜DSML｜｜ invoke></｜｜DSML｜｜ calls>'
+              for (let i = 0; i < text.length; i += 13) emit({ type: 'text', delta: text.slice(i, i + 13) })
+            }
+          }
+          emit({ type: 'usage', inputTokens: 10, outputTokens: 10 })
+          emit({ type: 'end', finishReason: 'stop' })
+          return { requestId: request.requestId }
+        })
+      }
+      task.api = new RavenBridgeHandler(client)
+      task.attemptApiRequest = () => task.api.createMessage('Test workflow', task.normalizeToolResultsForApi(task.apiConversationHistory))
+      await task.recursivelyMakeChatermRequests([{ type: 'text', text: 'Collect and verify service logs' }])
+      expect(task.executeCommandTool.mock.calls.map((call) => call[0])).toEqual(commands)
+      expect(turn).toBe(5)
+      expect(task.ask).toHaveBeenCalledTimes(1)
+      expect(task.say).toHaveBeenCalledWith('completion_result', 'Verified collected.tgz contains service.log', false)
+      expect(task.handleToolError).not.toHaveBeenCalled()
+      expect((await readFile(join(directory, 'collected.tgz'))).length).toBeGreaterThan(0)
+    } finally {
+      await rm(directory, { recursive: true, force: true })
     }
   })
 
