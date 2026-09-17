@@ -7,6 +7,7 @@
 import type { BrowserWindow } from 'electron'
 import type { GlobalStateKey, SecretKey, ApiConfiguration } from './types'
 import { isChatermEmbedded } from '../../../config/embedded'
+import { getRavenLLMClient } from '../../../embedded/raven-llm-client'
 import { DEFAULT_AUTO_APPROVAL_SETTINGS } from '../../shared/AutoApprovalSettings'
 import { DEFAULT_CHAT_SETTINGS } from '../../shared/ChatSettings'
 const logger = createLogger('agent')
@@ -281,13 +282,24 @@ export async function getUserConfig(): Promise<any> {
 }
 
 /**
- * Get model options from renderer process global state
+ * Get model options from Raven's bridge in embedded mode, or the standalone renderer state.
  * @param excludeThinking - Whether to exclude models with "-Thinking" suffix
  * @returns Array of model options
  */
 export async function getModelOptions(excludeThinking = false): Promise<ModelOption[]> {
   try {
-    if (shouldUseEmbeddedState()) return []
+    if (shouldUseEmbeddedState()) {
+      const models = (await getRavenLLMClient()?.listAvailableModels()) ?? []
+      return models
+        .map((model) => ({
+          id: model.modelId,
+          name: model.displayName || model.modelId,
+          checked: true,
+          type: 'standard',
+          apiProvider: 'raven-bridge'
+        }))
+        .filter((model) => !excludeThinking || !model.name.endsWith('-Thinking'))
+    }
     if (!mainWindow) {
       logger.error('Main window not initialized')
       return []
